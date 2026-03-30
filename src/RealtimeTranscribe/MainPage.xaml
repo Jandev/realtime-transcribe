@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="RealtimeTranscribe.MainPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RealtimeTranscribe.ViewModels"
+    Title="Realtime Transcribe">
+
+    <ScrollView>
+        <VerticalStackLayout
+            Padding="24,16"
+            Spacing="16">
+
+            <!-- Status label -->
+            <Label
+                FontSize="14"
+                HorizontalOptions="Center"
+                Text="{Binding StatusMessage}"
+                TextColor="{StaticResource Secondary}" />
+
+            <!-- Record / Stop button -->
+            <Button
+                Command="{Binding ToggleRecordingCommand}"
+                FontSize="18"
+                HeightRequest="60"
+                HorizontalOptions="Fill"
+                Text="{Binding RecordButtonText}"
+                BackgroundColor="{Binding IsRecording, Converter={StaticResource BoolToRecordColorConverter}}" />
+
+            <!-- Cancel button (visible while processing) -->
+            <Button
+                Command="{Binding CancelCommand}"
+                HorizontalOptions="Fill"
+                IsVisible="{Binding IsProcessing}"
+                Text="✕  Cancel"
+                Style="{StaticResource SecondaryButton}" />
+
+            <!-- Transcript section -->
+            <Label
+                FontAttributes="Bold"
+                FontSize="16"
+                Text="Transcript" />
+
+            <Border
+                Stroke="{StaticResource Gray300}"
+                StrokeThickness="1"
+                StrokeShape="RoundRectangle 6">
+                <Editor
+                    AutoSize="TextChanges"
+                    IsReadOnly="True"
+                    MinimumHeightRequest="120"
+                    Placeholder="Transcript will appear here after recording…"
+                    Text="{Binding Transcript}" />
+            </Border>
+
+            <Button
+                Command="{Binding CopyTranscriptCommand}"
+                HorizontalOptions="End"
+                Text="📋  Copy Transcript"
+                Style="{StaticResource SecondaryButton}" />
+
+            <!-- Summary section -->
+            <Label
+                FontAttributes="Bold"
+                FontSize="16"
+                Text="Summary &amp; Action Items" />
+
+            <Border
+                Stroke="{StaticResource Gray300}"
+                StrokeThickness="1"
+                StrokeShape="RoundRectangle 6">
+                <Editor
+                    AutoSize="TextChanges"
+                    IsReadOnly="True"
+                    MinimumHeightRequest="120"
+                    Placeholder="Summary and action items will appear here…"
+                    Text="{Binding Summary}" />
+            </Border>
+
+            <Button
+                Command="{Binding CopySummaryCommand}"
+                HorizontalOptions="End"
+                Text="📋  Copy Summary"
+                Style="{StaticResource SecondaryButton}" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+
+</ContentPage>
