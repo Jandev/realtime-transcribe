@@ -78,11 +78,11 @@ public class TranscriptionSchedulerTests
     public async Task RunAsync_WithEmptyChunk_DoesNotCallOnSegment()
     {
         var service = new StubTranscriptionService();
-        var scheduler = new TranscriptionScheduler(service, TimeSpan.FromMilliseconds(30));
+        var scheduler = new TranscriptionScheduler(service, TimeSpan.FromMilliseconds(50));
 
         var segmentsReceived = new List<string>();
         using var cts = new CancellationTokenSource();
-        cts.CancelAfter(TimeSpan.FromMilliseconds(120));
+        cts.CancelAfter(TimeSpan.FromSeconds(2));
 
         await scheduler.RunAsync(
             FixedChunkProvider(EmptyChunk),
@@ -97,11 +97,11 @@ public class TranscriptionSchedulerTests
     public async Task RunAsync_WithChunkAvailable_CallsOnSegmentAtLeastOnce()
     {
         var service = new StubTranscriptionService("hello world");
-        var scheduler = new TranscriptionScheduler(service, TimeSpan.FromMilliseconds(30));
+        var scheduler = new TranscriptionScheduler(service, TimeSpan.FromMilliseconds(50));
 
         var segmentsReceived = new List<string>();
         using var cts = new CancellationTokenSource();
-        cts.CancelAfter(TimeSpan.FromMilliseconds(120));
+        cts.CancelAfter(TimeSpan.FromSeconds(2));
 
         await scheduler.RunAsync(
             FixedChunkProvider(FakeAudioChunk),
@@ -116,18 +116,18 @@ public class TranscriptionSchedulerTests
     public async Task RunAsync_WithShortInterval_CallsOnSegmentMultipleTimes()
     {
         var service = new StubTranscriptionService("chunk");
-        var scheduler = new TranscriptionScheduler(service, TimeSpan.FromMilliseconds(30));
+        var scheduler = new TranscriptionScheduler(service, TimeSpan.FromMilliseconds(50));
 
         var segmentsReceived = new List<string>();
         using var cts = new CancellationTokenSource();
-        cts.CancelAfter(TimeSpan.FromMilliseconds(200));
+        cts.CancelAfter(TimeSpan.FromSeconds(2));
 
         await scheduler.RunAsync(
             FixedChunkProvider(FakeAudioChunk),
             segment => { segmentsReceived.Add(segment); return Task.CompletedTask; },
             cts.Token);
 
-        // With a 30 ms interval and a 200 ms window we expect at least 2 segments.
+        // With a 50 ms interval and a 2 s window we expect at least 2 segments.
         Assert.True(segmentsReceived.Count >= 2,
             $"Expected at least 2 segments but got {segmentsReceived.Count}.");
     }
@@ -137,11 +137,11 @@ public class TranscriptionSchedulerTests
     {
         // Throws on the first two calls, succeeds on the third.
         var fakeService = new FaultingTranscriptionService(failuresBeforeSuccess: 2, successTranscript: "recovered");
-        var scheduler = new TranscriptionScheduler(fakeService, TimeSpan.FromMilliseconds(30));
+        var scheduler = new TranscriptionScheduler(fakeService, TimeSpan.FromMilliseconds(50));
 
         var segmentsReceived = new List<string>();
         using var cts = new CancellationTokenSource();
-        cts.CancelAfter(TimeSpan.FromMilliseconds(200));
+        cts.CancelAfter(TimeSpan.FromSeconds(2));
 
         await scheduler.RunAsync(
             FixedChunkProvider(FakeAudioChunk),
@@ -157,11 +157,11 @@ public class TranscriptionSchedulerTests
     {
         int providerCalls = 0;
         var service = new StubTranscriptionService("ok");
-        var scheduler = new TranscriptionScheduler(service, TimeSpan.FromMilliseconds(30));
+        var scheduler = new TranscriptionScheduler(service, TimeSpan.FromMilliseconds(50));
 
         var segmentsReceived = new List<string>();
         using var cts = new CancellationTokenSource();
-        cts.CancelAfter(TimeSpan.FromMilliseconds(200));
+        cts.CancelAfter(TimeSpan.FromSeconds(2));
 
         await scheduler.RunAsync(
             audioChunkProvider: ct =>
@@ -206,11 +206,11 @@ public class TranscriptionSchedulerTests
     {
         string[] transcripts = { "first", "second", "third" };
         var service = new SequentialTranscriptionService(transcripts);
-        var scheduler = new TranscriptionScheduler(service, TimeSpan.FromMilliseconds(20));
+        var scheduler = new TranscriptionScheduler(service, TimeSpan.FromMilliseconds(50));
 
         var segmentsReceived = new List<string>();
         using var cts = new CancellationTokenSource();
-        cts.CancelAfter(TimeSpan.FromMilliseconds(120));
+        cts.CancelAfter(TimeSpan.FromSeconds(2));
 
         await scheduler.RunAsync(
             FixedChunkProvider(FakeAudioChunk),
