@@ -47,11 +47,42 @@ jobs:
             /p:ApplicationDisplayVersion=${{ steps.version.outputs.version }} \
             /p:ApplicationVersion=${{ github.run_number }}
 
-      - name: Archive artifact
+      - name: Validate signing secrets are configured
         run: |
-          ARTIFACT="RealtimeTranscribe-${{ steps.version.outputs.tag }}-${{ steps.version.outputs.short_sha }}.zip"
-          zip -r "$ARTIFACT" ./publish
-          echo "ARTIFACT=${ARTIFACT}" >> "$GITHUB_ENV"
+          missing=()
+          [[ -z "${{ secrets.MACOS_CERTIFICATE }}" ]]            && missing+=("MACOS_CERTIFICATE")
+          [[ -z "${{ secrets.MACOS_CERTIFICATE_PWD }}" ]]        && missing+=("MACOS_CERTIFICATE_PWD")
+          [[ -z "${{ secrets.MACOS_KEYCHAIN_PASSWORD }}" ]]      && missing+=("MACOS_KEYCHAIN_PASSWORD")
+          [[ -z "${{ secrets.APPLE_ID }}" ]]                     && missing+=("APPLE_ID")
+          [[ -z "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" ]]  && missing+=("APPLE_APP_SPECIFIC_PASSWORD")
+          [[ -z "${{ secrets.APPLE_TEAM_ID }}" ]]                && missing+=("APPLE_TEAM_ID")
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "ERROR: The following required signing secrets are not configured:" >&2
+            for s in "${missing[@]}"; do echo "  - $s" >&2; done
+            echo "See docs/release-signing-runbook.md for setup instructions." >&2
+            exit 1
+          fi
+          echo "All signing secrets are present."
+
+      - name: Make scripts executable
+        run: chmod +x scripts/sign-and-notarize.sh scripts/verify-release.sh
+
+      - name: Sign, notarize, and staple release package
+        env:
+          MACOS_CERTIFICATE:           ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD:       ${{ secrets.MACOS_CERTIFICATE_PWD }}
+          MACOS_KEYCHAIN_PASSWORD:     ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+          APPLE_ID:                    ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID:               ${{ secrets.APPLE_TEAM_ID }}
+          APP_BUNDLE_ID:               com.jandev.realtimetranscribe
+        run: |
+          PKG_PATH="RealtimeTranscribe-${{ steps.version.outputs.tag }}-${{ steps.version.outputs.short_sha }}.pkg"
+          ./scripts/sign-and-notarize.sh ./publish "${{ steps.version.outputs.version }}" "$PKG_PATH"
+          echo "ARTIFACT=${PKG_PATH}" >> "$GITHUB_ENV"
+
+      - name: Verify signed release artifact
+        run: ./scripts/verify-release.sh "${{ env.ARTIFACT }}"
 
       - name: Create GitHub Release
         env:

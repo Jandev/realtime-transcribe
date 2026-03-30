@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Allow the app to run after being notarized (required for hardened runtime) -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <false/>
+
+    <!-- Allow unsigned executable memory (not required; explicitly disabled) -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <false/>
+
+    <!-- Allow dyld environment variables (not required; explicitly disabled) -->
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <false/>
+
+    <!-- Disable library validation to allow loading .NET runtime libraries -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+
+    <!-- Network client access for Azure AI service calls -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+
+    <!-- Microphone access for audio recording and transcription -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+</dict>
+</plist>
