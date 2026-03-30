@@ -19,10 +19,11 @@ Supports Dutch 🇳🇱 and English 🇬🇧 automatically (Whisper auto-detects
 | 🎙 Recording          | Microphone capture (16 kHz mono WAV via Plugin.Maui.Audio)         |
 | 🔊 Full-audio capture | Optional BlackHole loopback (see guide below)                      |
 | 📝 Transcription      | Azure AI Foundry Whisper large-v3                                  |
-| 🤖 Summary            | GPT-4o-mini; concise 3-sentence summary + bullet action items      |
+| 🤖 Summary            | GPT-4o-mini; concise summary + bullet action items, **rendered as Markdown** |
+| 📄 Markdown rendering | Summary rendered with headings, bold, italic, bullet lists, tables |
 | 🌍 Languages          | Dutch & English auto-detected                                      |
 | ⚙️ Settings UI        | Endpoint / API key configurable in-app (persisted via Preferences) |
-| 📋 Copy buttons       | One-tap copy of transcript or summary to clipboard                 |
+| 📋 Copy buttons       | One-tap copy of transcript or summary to clipboard (summary copied as Markdown text) |
 
 ---
 
@@ -229,6 +230,35 @@ The `Info.plist` contains:
 | Long recordings (>30 min) | Whisper file-size limit is 25 MB; chunk large files if needed |
 | Network errors            | Exception message shown in status                             |
 | Operation cancel          | Graceful cancellation via CancellationToken                   |
+| Markdown rendering error  | Falls back to minimum height; raw Markdown still in clipboard |
+
+---
+
+## Markdown Support
+
+The summary is formatted in Markdown by GPT-4o-mini and rendered in the UI using a `WebView` with embedded CSS.
+
+### Supported elements (summary only)
+
+| Element  | Example                      |
+| -------- | ---------------------------- |
+| Headings | `## Summary`, `## Action Items` |
+| Bold     | `**key term**`               |
+| Italic   | `*emphasis*`                 |
+| Bullets  | `- action item`              |
+| Tables   | `\| Column \| Value \|`      |
+
+### Transcript
+
+The transcript remains plain text and is **not** Markdown-processed.
+
+### Copy behavior
+
+The **Copy Summary** button copies the raw Markdown text to the clipboard. Paste it into any Markdown-aware editor (e.g., Obsidian, VS Code, Notion) to retain formatting.
+
+### Security
+
+Raw HTML embedded in the AI response is HTML-encoded (escaped) by the Markdown renderer so it cannot execute in the WebView. JavaScript from the model output is never run.
 
 ---
 
