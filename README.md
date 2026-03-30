@@ -96,6 +96,25 @@ Leave the API Key blank. The app falls back to `DefaultAzureCredential`, which s
 
 ## Build & Run
 
+### Install the supported Xcode version for .NET 10 (once)
+
+For stable `.NET 10` MacCatalyst builds, install the Xcode version required by the installed Apple workloads (currently `Xcode 26.2`).
+
+1. Go to [Apple Developer Downloads](https://developer.apple.com/download/all/).
+2. Sign in with your Apple ID.
+3. Search for **Xcode 26.2** and download the `.xip`.
+   - If `26.2` is not listed in the UI, inspect the download URLs for nearby `26.x` versions and infer the `26.2` URL by adjusting the version segment accordingly.
+   - Apple sometimes keeps older artifacts available even when discovery in the web UI is inconsistent.
+4. Extract it and rename it before first launch (for example `Xcode_26.2.app`).
+5. Move it to `/Applications/`.
+6. Select it for command-line builds:
+
+```bash
+sudo xcode-select --switch /Applications/Xcode_26.2.app
+sudo xcodebuild -runFirstLaunch
+sudo xcodebuild -license accept
+```
+
 ### Install the MAUI workload (once)
 
 ```bash
