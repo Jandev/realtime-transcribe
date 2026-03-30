@@ -53,6 +53,10 @@
     <PackageReference Include="Plugin.Maui.Audio" Version="4.0.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\RealtimeTranscribe.Core\RealtimeTranscribe.Core.csproj" />
+  </ItemGroup>
+
   <!-- Embed appsettings.json as raw resource -->
   <ItemGroup>
     <MauiAsset Include="appsettings.json" LogicalName="appsettings.json" />

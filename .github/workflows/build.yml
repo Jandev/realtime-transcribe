@@ -1,13 +1,10 @@
-name: Build
+name: PR Build & Test
 
 on:
-  push:
-    branches: [ "main" ]
   pull_request:
-    branches: [ "main" ]
 
 jobs:
-  build-maccatalyst:
+  build-and-test:
     runs-on: macos-15
 
     steps:
@@ -21,5 +18,8 @@ jobs:
       - name: Install MAUI workload
         run: dotnet workload install maccatalyst
 
-      - name: Build
-        run: dotnet build src/RealtimeTranscribe/RealtimeTranscribe.csproj -f net10.0-maccatalyst -c Release
+      - name: Build solution
+        run: dotnet build RealtimeTranscribe.sln -c Debug
+
+      - name: Run tests
+        run: dotnet test tests/RealtimeTranscribe.Tests/RealtimeTranscribe.Tests.csproj -c Debug --no-build --logger "console;verbosity=normal"
