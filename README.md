@@ -29,7 +29,7 @@ Supports Dutch 🇳🇱 and English 🇬🇧 automatically (Whisper auto-detects
 ## Requirements
 
 - macOS 14 Sonoma or later
-- .NET 9 SDK with the **MAUI workload** (`dotnet workload install maui`)
+- .NET 10 SDK with the **MAUI workload** (`dotnet workload install maui`)
 - An Azure subscription with:
   - Azure OpenAI resource
   - **whisper-large-v3** deployment
@@ -106,15 +106,15 @@ dotnet workload install maui
 
 ```bash
 cd src/RealtimeTranscribe
-dotnet build -f net9.0-maccatalyst
-dotnet run  -f net9.0-maccatalyst
+dotnet build -f net10.0-maccatalyst
+dotnet run -f net10.0-maccatalyst
 ```
 
 ### Build a .app bundle
 
 ```bash
-dotnet publish -f net9.0-maccatalyst -c Release
-# Output: bin/Release/net9.0-maccatalyst/publish/RealtimeTranscribe.app
+dotnet publish -f net10.0-maccatalyst -c Release
+# Output: bin/Release/net10.0-maccatalyst/publish/RealtimeTranscribe.app
 ```
 
 ---
