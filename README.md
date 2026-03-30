@@ -8,21 +8,21 @@ Supports Dutch 🇳🇱 and English 🇬🇧 automatically (Whisper auto-detects
 
 ## Screenshots
 
-> Build and run the app on macOS to see the UI. The main screen has a single Record/Stop button, a Transcript pane, and a Summary & Action Items pane with Copy buttons.
+![Realtime Transcribe app showing a successful Dutch transcription and generated summary](docs/images/first-transcription-in-dutch-screenshot.png)
 
 ---
 
 ## Features
 
-| Feature | Details |
-|---------|---------|
-| 🎙 Recording | Microphone capture (16 kHz mono WAV via Plugin.Maui.Audio) |
-| 🔊 Full-audio capture | Optional BlackHole loopback (see guide below) |
-| 📝 Transcription | Azure AI Foundry Whisper large-v3 |
-| 🤖 Summary | GPT-4o-mini; concise 3-sentence summary + bullet action items |
-| 🌍 Languages | Dutch & English auto-detected |
-| ⚙️ Settings UI | Endpoint / API key configurable in-app (persisted via Preferences) |
-| 📋 Copy buttons | One-tap copy of transcript or summary to clipboard |
+| Feature               | Details                                                            |
+| --------------------- | ------------------------------------------------------------------ |
+| 🎙 Recording          | Microphone capture (16 kHz mono WAV via Plugin.Maui.Audio)         |
+| 🔊 Full-audio capture | Optional BlackHole loopback (see guide below)                      |
+| 📝 Transcription      | Azure AI Foundry Whisper large-v3                                  |
+| 🤖 Summary            | GPT-4o-mini; concise 3-sentence summary + bullet action items      |
+| 🌍 Languages          | Dutch & English auto-detected                                      |
+| ⚙️ Settings UI        | Endpoint / API key configurable in-app (persisted via Preferences) |
+| 📋 Copy buttons       | One-tap copy of transcript or summary to clipboard                 |
 
 ---
 
@@ -56,6 +56,7 @@ There are two ways to configure the Azure credentials:
 ### Option A – Settings UI (recommended for end-users)
 
 Run the app and navigate to the **Settings** tab. Enter:
+
 - Endpoint URL
 - API Key
 - Whisper deployment name
@@ -220,14 +221,14 @@ The `Info.plist` contains:
 
 ## Edge Cases
 
-| Scenario | Handling |
-|----------|---------|
-| No microphone permission | User-friendly status message |
-| Azure auth failure | Exception message shown in status |
-| Empty recording | Skips transcription/summarisation |
+| Scenario                  | Handling                                                      |
+| ------------------------- | ------------------------------------------------------------- |
+| No microphone permission  | User-friendly status message                                  |
+| Azure auth failure        | Exception message shown in status                             |
+| Empty recording           | Skips transcription/summarisation                             |
 | Long recordings (>30 min) | Whisper file-size limit is 25 MB; chunk large files if needed |
-| Network errors | Exception message shown in status |
-| Operation cancel | Graceful cancellation via CancellationToken |
+| Network errors            | Exception message shown in status                             |
+| Operation cancel          | Graceful cancellation via CancellationToken                   |
 
 ---
 
