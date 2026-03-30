@@ -50,6 +50,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<IAudioService, AudioService>();
         builder.Services.AddSingleton<IAudioManager>(AudioManager.Current);
         builder.Services.AddSingleton<ITranscriptionService, TranscriptionService>();
+        builder.Services.AddSingleton<ITranscriptionScheduler, TranscriptionScheduler>();
 
         // ------------------------------------------------------------------
         // ViewModels
