@@ -70,5 +70,40 @@ public class TranscriptionServiceTests
 
         Assert.Equal(string.Empty, result);
     }
+
+    [Fact]
+    public async Task TranscribeAsync_WithCognitiveServicesEndpoint_ReturnsEmptyStringForEmptyInput()
+    {
+        // Validates the common Azure AI Services (cognitiveservices.azure.com) endpoint format,
+        // which is the same URL base used when models like 'whisper' and 'gpt-4o-mini' are
+        // deployed to an Azure Cognitive Services resource.
+        var service = new TranscriptionService(new AzureOpenAISettings
+        {
+            Endpoint = "https://fake.cognitiveservices.azure.com",
+            ApiKey = "test-api-key",
+            WhisperDeploymentName = "whisper",
+            ChatDeploymentName = "gpt-4o-mini"
+        });
+
+        var result = await service.TranscribeAsync(Array.Empty<byte>());
+
+        Assert.Equal(string.Empty, result);
+    }
+
+    [Fact]
+    public async Task SummarizeAsync_WithCognitiveServicesEndpoint_ReturnsEmptyStringForEmptyInput()
+    {
+        var service = new TranscriptionService(new AzureOpenAISettings
+        {
+            Endpoint = "https://fake.cognitiveservices.azure.com",
+            ApiKey = "test-api-key",
+            WhisperDeploymentName = "whisper",
+            ChatDeploymentName = "gpt-4o-mini"
+        });
+
+        var result = await service.SummarizeAsync(string.Empty);
+
+        Assert.Equal(string.Empty, result);
+    }
 }
 

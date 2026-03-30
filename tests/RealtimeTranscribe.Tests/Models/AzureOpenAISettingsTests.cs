@@ -37,6 +37,8 @@ public class AzureOpenAISettingsTests
     [Theory]
     [InlineData("https://myresource.openai.azure.com/")]
     [InlineData("https://myresource.openai.azure.com")]
+    [InlineData("https://myresource.cognitiveservices.azure.com/")]
+    [InlineData("https://myresource.cognitiveservices.azure.com")]
     [InlineData("")]
     [InlineData("   ")]
     public void IsAiFoundryEndpoint_ReturnsFalse_ForNonFoundryUrls(string endpoint)
@@ -64,14 +66,23 @@ public class AzureOpenAISettingsTests
     }
 
     [Fact]
-    public void Settings_CanBeConfiguredWithApiKey()
+    public void Settings_CanBeConfiguredWithCognitiveServicesValues()
     {
+        // Azure AI Services (Cognitive Services) endpoint — the actual URL format used by the
+        // service when models are accessed through a cognitiveservices.azure.com resource.
+        // e.g. whisper at .../openai/deployments/whisper/audio/transcriptions
+        //      gpt at    .../openai/deployments/gpt-4o-mini/chat/completions
         var settings = new AzureOpenAISettings
         {
-            Endpoint = "https://myproject.services.ai.azure.com/api/projects/myproject",
-            ApiKey = "sk-test-key"
+            Endpoint = "https://myresource.cognitiveservices.azure.com",
+            ApiKey = "test-api-key",
+            WhisperDeploymentName = "whisper",
+            ChatDeploymentName = "gpt-4o-mini"
         };
 
+        Assert.False(settings.IsAiFoundryEndpoint);
+        Assert.Equal("whisper", settings.WhisperDeploymentName);
+        Assert.Equal("gpt-4o-mini", settings.ChatDeploymentName);
         Assert.False(string.IsNullOrEmpty(settings.ApiKey));
     }
 }

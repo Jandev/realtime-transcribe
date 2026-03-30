@@ -4,9 +4,10 @@ namespace RealtimeTranscribe.Models;
 /// Strongly-typed representation of the AzureOpenAI section in appsettings.json / user-secrets.
 /// </summary>
 /// <remarks>
-/// Supports both Azure OpenAI and Azure AI Foundry endpoints:
+/// Supports the following endpoint formats:
 /// <list type="bullet">
 ///   <item>Azure OpenAI: <c>https://&lt;resource&gt;.openai.azure.com/</c></item>
+///   <item>Azure AI Services (Cognitive Services): <c>https://&lt;resource&gt;.cognitiveservices.azure.com/</c></item>
 ///   <item>Azure AI Foundry: <c>https://&lt;project&gt;.services.ai.azure.com/api/projects/&lt;project&gt;</c></item>
 /// </list>
 /// </remarks>
@@ -23,7 +24,8 @@ public class AzureOpenAISettings
 
     /// <summary>
     /// Returns <see langword="true"/> when the configured endpoint points to an Azure AI Foundry
-    /// project (<c>services.ai.azure.com</c>), rather than a classic Azure OpenAI resource.
+    /// project (<c>services.ai.azure.com</c>), rather than a classic Azure OpenAI resource or
+    /// an Azure AI Services (Cognitive Services) resource.
     /// </summary>
     public bool IsAiFoundryEndpoint =>
         !string.IsNullOrWhiteSpace(Endpoint) &&
