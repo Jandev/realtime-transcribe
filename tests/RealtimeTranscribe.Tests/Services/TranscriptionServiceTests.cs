@@ -11,8 +11,18 @@ namespace RealtimeTranscribe.Tests.Services;
 /// </summary>
 public class TranscriptionServiceTests
 {
+    // Uses an Azure AI Foundry project endpoint to validate that the service
+    // is configured for the AI Foundry URL format.
+    private const string AiFoundryEndpoint =
+        "https://fake-project.services.ai.azure.com/api/projects/fake-project";
+
     private static TranscriptionService CreateService() =>
-        new(new AzureOpenAISettings { Endpoint = "https://fake.openai.azure.com/" });
+        new(new AzureOpenAISettings
+        {
+            Endpoint = AiFoundryEndpoint,
+            WhisperDeploymentName = "whisper",
+            ChatDeploymentName = "gpt-4o-mini"
+        });
 
     [Fact]
     public async Task TranscribeAsync_WithEmptyByteArray_ReturnsEmptyString()
@@ -43,4 +53,22 @@ public class TranscriptionServiceTests
 
         Assert.Equal(string.Empty, result);
     }
+
+    [Fact]
+    public async Task TranscribeAsync_WithApiKeySettings_ReturnsEmptyStringForEmptyInput()
+    {
+        // Verifies the API-key branch of BuildAzureClient still honours the guard clause.
+        var service = new TranscriptionService(new AzureOpenAISettings
+        {
+            Endpoint = AiFoundryEndpoint,
+            ApiKey = "test-api-key",
+            WhisperDeploymentName = "whisper",
+            ChatDeploymentName = "gpt-4o-mini"
+        });
+
+        var result = await service.TranscribeAsync(Array.Empty<byte>());
+
+        Assert.Equal(string.Empty, result);
+    }
 }
+
