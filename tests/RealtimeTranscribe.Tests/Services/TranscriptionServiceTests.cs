@@ -35,6 +35,26 @@ public class TranscriptionServiceTests
     }
 
     [Fact]
+    public async Task DiarizeAsync_WithEmptyTranscript_ReturnsEmptyString()
+    {
+        var service = CreateService();
+
+        var result = await service.DiarizeAsync(string.Empty);
+
+        Assert.Equal(string.Empty, result);
+    }
+
+    [Fact]
+    public async Task DiarizeAsync_WithWhitespaceTranscript_ReturnsEmptyString()
+    {
+        var service = CreateService();
+
+        var result = await service.DiarizeAsync("   ");
+
+        Assert.Equal(string.Empty, result);
+    }
+
+    [Fact]
     public async Task SummarizeAsync_WithEmptyTranscript_ReturnsEmptyString()
     {
         var service = CreateService();

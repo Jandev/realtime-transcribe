@@ -24,6 +24,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(RecordButtonText))]
     [NotifyCanExecuteChangedFor(nameof(CopyTranscriptCommand))]
+    [NotifyCanExecuteChangedFor(nameof(CopyDiarizedTranscriptCommand))]
     [NotifyCanExecuteChangedFor(nameof(CopySummaryCommand))]
     [NotifyCanExecuteChangedFor(nameof(CancelCommand))]
     private bool _isRecording;
@@ -31,6 +32,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(RecordButtonText))]
     [NotifyCanExecuteChangedFor(nameof(CopyTranscriptCommand))]
+    [NotifyCanExecuteChangedFor(nameof(CopyDiarizedTranscriptCommand))]
     [NotifyCanExecuteChangedFor(nameof(CopySummaryCommand))]
     [NotifyCanExecuteChangedFor(nameof(CancelCommand))]
     private bool _isProcessing;
@@ -41,6 +43,10 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(CopyTranscriptCommand))]
     private string _transcript = string.Empty;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(CopyDiarizedTranscriptCommand))]
+    private string _diarizedTranscript = string.Empty;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(CopySummaryCommand))]
@@ -78,6 +84,12 @@ public partial class MainViewModel : ObservableObject
         await Clipboard.Default.SetTextAsync(Transcript);
     }
 
+    [RelayCommand(CanExecute = nameof(HasDiarizedTranscript))]
+    private async Task CopyDiarizedTranscriptAsync()
+    {
+        await Clipboard.Default.SetTextAsync(DiarizedTranscript);
+    }
+
     [RelayCommand(CanExecute = nameof(HasSummary))]
     private async Task CopySummaryAsync()
     {
@@ -85,6 +97,7 @@ public partial class MainViewModel : ObservableObject
     }
 
     private bool HasTranscript => !string.IsNullOrEmpty(Transcript) && !IsRecording && !IsProcessing;
+    private bool HasDiarizedTranscript => !string.IsNullOrEmpty(DiarizedTranscript) && !IsRecording && !IsProcessing;
     private bool HasSummary => !string.IsNullOrEmpty(Summary) && !IsRecording && !IsProcessing;
 
     private async Task StartRecordingAsync()
@@ -99,6 +112,7 @@ public partial class MainViewModel : ObservableObject
             }
 
             Transcript = string.Empty;
+            DiarizedTranscript = string.Empty;
             Summary = string.Empty;
 
             await _audioService.StartRecordingAsync();
@@ -131,6 +145,9 @@ public partial class MainViewModel : ObservableObject
 
             StatusMessage = "Transcribing…";
             Transcript = await _transcriptionService.TranscribeAsync(wav, _cts.Token);
+
+            StatusMessage = "Identifying speakers…";
+            DiarizedTranscript = await _transcriptionService.DiarizeAsync(Transcript, _cts.Token);
 
             StatusMessage = "Summarising…";
             Summary = await _transcriptionService.SummarizeAsync(Transcript, _cts.Token);

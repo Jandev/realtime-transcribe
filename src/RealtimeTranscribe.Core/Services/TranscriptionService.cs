@@ -35,6 +35,14 @@ public class TranscriptionService : ITranscriptionService
 {
     private readonly AzureOpenAISettings _settings;
 
+    private const string DiarizationSystemPrompt =
+        "You are a speaker diarization assistant. " +
+        "Given a meeting transcript, identify the distinct speakers and label each turn. " +
+        "Use the format \"Speaker N: text\" (where N starts at 1) for every turn. " +
+        "The transcript may be in Dutch or English — do NOT translate; keep the original language. " +
+        "If only one speaker is present, label all text as \"Speaker 1:\". " +
+        "Return ONLY the diarized transcript with no additional commentary or explanation.";
+
     private const string SummarisationSystemPrompt =
         "You are an assistant that analyses meeting transcripts. " +
         "The transcript may be in Dutch or English. " +
@@ -61,6 +69,25 @@ public class TranscriptionService : ITranscriptionService
         var result = await audioClient.TranscribeAudioAsync(audioStream, "audio.wav", cancellationToken: cancellationToken);
 
         return result.Value.Text;
+    }
+
+    /// <inheritdoc/>
+    public async Task<string> DiarizeAsync(string transcript, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(transcript))
+            return string.Empty;
+
+        var client = BuildAzureClient();
+        var chatClient = client.GetChatClient(_settings.ChatDeploymentName);
+
+        var messages = new List<ChatMessage>
+        {
+            new SystemChatMessage(DiarizationSystemPrompt),
+            new UserChatMessage($"Transcript:\n\n{transcript}")
+        };
+
+        var response = await chatClient.CompleteChatAsync(messages, cancellationToken: cancellationToken);
+        return response.Value.Content[0].Text;
     }
 
     /// <inheritdoc/>
