@@ -21,6 +21,9 @@
 
     <!-- macOS specific -->
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">14.0</SupportedOSPlatformVersion>
+
+    <!-- Allow building with newer minor versions of Xcode than the SDK explicitly requires -->
+    <ValidateXcodeVersion>false</ValidateXcodeVersion>
   </PropertyGroup>
 
   <ItemGroup>
