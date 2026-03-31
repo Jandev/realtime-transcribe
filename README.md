@@ -23,6 +23,17 @@ Supports Dutch 🇳🇱 and English 🇬🇧 automatically (Whisper auto-detects
 | 🌍 Languages          | Dutch & English auto-detected                                      |
 | ⚙️ Settings UI        | Endpoint / API key configurable in-app (persisted via Preferences) |
 | 📋 Copy buttons       | One-tap copy of transcript or summary to clipboard                 |
+| 🔡 Text scaling       | A− / A+ buttons zoom transcript & summary text (10–28 pt); choice persisted across restarts |
+
+---
+
+## Text Scaling / Readability
+
+On hi-res (Retina/HiDPI) displays the default font sizes can feel small. The app ships with a slightly larger default (15 pt) and includes **A−** / **A+** controls on the main screen to adjust the transcript and summary text size at any time.
+
+- **Range:** 10 pt → 28 pt, stepped in 2 pt increments.
+- **Persisted:** the selected size is stored in the platform preferences and restored on next launch.
+- **Scope:** scaling affects the transcript and summary reading areas. Controls, labels, and system chrome outside the app are not affected.
 
 ---
 
