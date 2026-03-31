@@ -4,6 +4,10 @@ using RealtimeTranscribe.Models;
 using AVFoundation;
 using Foundation;
 #endif
+#if MACCATALYST
+using System.Runtime.InteropServices;
+using CoreFoundation;
+#endif
 
 namespace RealtimeTranscribe.Services;
 
@@ -60,7 +64,9 @@ public sealed class AudioService : IAudioService, IDisposable
 
     public IReadOnlyList<AudioDevice> GetInputDevices()
     {
-#if MACCATALYST || IOS
+#if MACCATALYST
+        return GetCoreAudioDevices(inputScope: true);
+#elif IOS
         var session = AVAudioSession.SharedInstance();
         var inputs = session.AvailableInputs;
         if (inputs is { Length: > 0 })
@@ -71,7 +77,9 @@ public sealed class AudioService : IAudioService, IDisposable
 
     public IReadOnlyList<AudioDevice> GetOutputDevices()
     {
-#if MACCATALYST || IOS
+#if MACCATALYST
+        return GetCoreAudioDevices(inputScope: false);
+#elif IOS
         var session = AVAudioSession.SharedInstance();
         var outputs = session.CurrentRoute?.Outputs;
         if (outputs is { Length: > 0 })
@@ -185,9 +193,18 @@ public sealed class AudioService : IAudioService, IDisposable
             return;
 
         var session = AVAudioSession.SharedInstance();
+#if MACCATALYST
+        // On macOS Catalyst, devices are identified by their CoreAudio UID. Resolve the
+        // human-readable name and match it against the entries in AvailableInputs, since
+        // AVAudioSessionPortDescription does not expose the CoreAudio UID directly.
+        var deviceName = GetInputDevices().FirstOrDefault(d => d.Id == _selectedInputDeviceId)?.Name;
+        var preferred = deviceName is not null
+            ? session.AvailableInputs?.FirstOrDefault(p => p.PortName == deviceName)
+            : null;
+#else
         var preferred = session.AvailableInputs?
             .FirstOrDefault(p => $"{p.PortType}:{p.PortName}" == _selectedInputDeviceId);
-
+#endif
         if (preferred is not null)
             session.SetPreferredInput(preferred, out _);
 #endif
@@ -201,4 +218,147 @@ public sealed class AudioService : IAudioService, IDisposable
 #endif
         GC.SuppressFinalize(this);
     }
+
+#if MACCATALYST
+    // ------------------------------------------------------------------
+    // CoreAudio P/Invoke helpers (macOS / MacCatalyst only)
+    //
+    // AVAudioSession.AvailableInputs on macOS Catalyst returns only the
+    // active input port, and CurrentRoute.Outputs returns only the active
+    // output.  The CoreAudio HAL (kAudioHardwarePropertyDevices) is the
+    // authoritative source for ALL devices, including aggregated devices,
+    // virtual drivers (BlackHole), and iPhone/iPad via Continuity.
+    // ------------------------------------------------------------------
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct AudioObjectPropertyAddress
+    {
+        public uint mSelector;
+        public uint mScope;
+        public uint mElement;
+    }
+
+    private const uint kAudioObjectSystemObject        = 1;
+    private const uint kAudioHardwarePropertyDevices   = 0x64657623u; // 'dev#'
+    private const uint kAudioDevicePropertyStreams     = 0x73746D23u; // 'stm#'
+    private const uint kAudioObjectPropertyName        = 0x6C6E616Du; // 'lnam'
+    private const uint kAudioDevicePropertyDeviceUID   = 0x75696420u; // 'uid '
+    private const uint kAudioObjectPropertyScopeGlobal = 0x676C6F62u; // 'glob'
+    private const uint kAudioDevicePropertyScopeInput  = 0x696E7075u; // 'inpu'
+    private const uint kAudioDevicePropertyScopeOutput = 0x6F757470u; // 'outp'
+    private const uint kAudioObjectPropertyElementMain = 0;
+
+    [DllImport("/System/Library/Frameworks/CoreAudio.framework/CoreAudio")]
+    private static extern int AudioObjectGetPropertyDataSize(
+        uint objectId,
+        in AudioObjectPropertyAddress address,
+        uint qualifierDataSize,
+        IntPtr qualifierData,
+        out uint dataSize);
+
+    [DllImport("/System/Library/Frameworks/CoreAudio.framework/CoreAudio")]
+    private static extern int AudioObjectGetPropertyData(
+        uint objectId,
+        in AudioObjectPropertyAddress address,
+        uint qualifierDataSize,
+        IntPtr qualifierData,
+        ref uint ioDataSize,
+        IntPtr outData);
+
+    [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
+    private static extern void CFRelease(IntPtr cfTypeRef);
+
+    /// <summary>
+    /// Enumerates all CoreAudio devices that have at least one stream in the requested
+    /// direction (input or output).  Uses the device's persistent UID as the
+    /// <see cref="AudioDevice.Id"/> so selections survive device reconnections.
+    /// </summary>
+    private static IReadOnlyList<AudioDevice> GetCoreAudioDevices(bool inputScope)
+    {
+        var devicesAddr = new AudioObjectPropertyAddress
+        {
+            mSelector = kAudioHardwarePropertyDevices,
+            mScope    = kAudioObjectPropertyScopeGlobal,
+            mElement  = kAudioObjectPropertyElementMain,
+        };
+
+        if (AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, in devicesAddr, 0, IntPtr.Zero, out uint dataSize) != 0)
+            return Array.Empty<AudioDevice>();
+
+        int deviceCount = (int)(dataSize / sizeof(uint));
+        if (deviceCount == 0)
+            return Array.Empty<AudioDevice>();
+
+        var deviceIds = new uint[deviceCount];
+        var gch = GCHandle.Alloc(deviceIds, GCHandleType.Pinned);
+        try
+        {
+            if (AudioObjectGetPropertyData(kAudioObjectSystemObject, in devicesAddr, 0, IntPtr.Zero, ref dataSize, gch.AddrOfPinnedObject()) != 0)
+                return Array.Empty<AudioDevice>();
+        }
+        finally
+        {
+            gch.Free();
+        }
+
+        uint streamsScope = inputScope ? kAudioDevicePropertyScopeInput : kAudioDevicePropertyScopeOutput;
+        var result = new List<AudioDevice>(deviceCount);
+
+        foreach (uint deviceId in deviceIds)
+        {
+            // Skip devices that have no streams in the requested direction.
+            var streamsAddr = new AudioObjectPropertyAddress
+            {
+                mSelector = kAudioDevicePropertyStreams,
+                mScope    = streamsScope,
+                mElement  = kAudioObjectPropertyElementMain,
+            };
+            if (AudioObjectGetPropertyDataSize(deviceId, in streamsAddr, 0, IntPtr.Zero, out uint streamsSize) != 0 || streamsSize == 0)
+                continue;
+
+            string? uid  = GetCoreAudioStringProperty(deviceId, kAudioDevicePropertyDeviceUID, kAudioObjectPropertyScopeGlobal);
+            string? name = GetCoreAudioStringProperty(deviceId, kAudioObjectPropertyName,       kAudioObjectPropertyScopeGlobal);
+            if (uid is not null && name is not null)
+                result.Add(new AudioDevice(uid, name));
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Reads a CFString property from a CoreAudio object, converts it to a managed
+    /// <see cref="string"/>, and releases the underlying CF object.
+    /// </summary>
+    private static string? GetCoreAudioStringProperty(uint objectId, uint selector, uint scope)
+    {
+        var addr = new AudioObjectPropertyAddress
+        {
+            mSelector = selector,
+            mScope    = scope,
+            mElement  = kAudioObjectPropertyElementMain,
+        };
+
+        // CFString properties are returned as a CFStringRef (a pointer-sized value).
+        uint size   = (uint)IntPtr.Size;
+        IntPtr buf  = Marshal.AllocHGlobal(IntPtr.Size);
+        try
+        {
+            Marshal.WriteIntPtr(buf, IntPtr.Zero);
+            if (AudioObjectGetPropertyData(objectId, in addr, 0, IntPtr.Zero, ref size, buf) != 0)
+                return null;
+
+            IntPtr cfStringRef = Marshal.ReadIntPtr(buf);
+            if (cfStringRef == IntPtr.Zero)
+                return null;
+
+            string? value = CFString.FromHandle(cfStringRef);
+            CFRelease(cfStringRef);
+            return value;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buf);
+        }
+    }
+#endif
 }
