@@ -12,13 +12,15 @@ public partial class MainViewModel : ObservableObject
 {
     private readonly IAudioService _audioService;
     private readonly ITranscriptionService _transcriptionService;
+    private readonly IMarkdownProcessor _markdownProcessor;
 
     private CancellationTokenSource? _cts;
 
-    public MainViewModel(IAudioService audioService, ITranscriptionService transcriptionService)
+    public MainViewModel(IAudioService audioService, ITranscriptionService transcriptionService, IMarkdownProcessor markdownProcessor)
     {
         _audioService = audioService;
         _transcriptionService = transcriptionService;
+        _markdownProcessor = markdownProcessor;
 
         // Restore persisted font size, clamping any out-of-range value to a safe default.
         _contentFontSize = TextScaleService.Restore(
@@ -47,8 +49,53 @@ public partial class MainViewModel : ObservableObject
     private string _transcript = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SummaryHtml))]
     [NotifyCanExecuteChangedFor(nameof(CopySummaryCommand))]
     private string _summary = string.Empty;
+
+    /// <summary>
+    /// Rendered HTML for the summary, derived from <see cref="Summary"/>.
+    /// Contains a full HTML document with embedded CSS styling.
+    /// Returns placeholder HTML when no summary is available.
+    /// </summary>
+    public string SummaryHtml =>
+        string.IsNullOrEmpty(Summary)
+            ? WrapHtml("<p style=\"color: #9a9a9a; font-style: italic;\">Summary and action items will appear here…</p>")
+            : WrapHtml(_markdownProcessor.ToHtml(Summary));
+
+    private static string WrapHtml(string bodyContent) => $$"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <style>
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+                    font-size: 14px;
+                    line-height: 1.6;
+                    margin: 0;
+                    padding: 8px 12px;
+                    color: #1a1a1a;
+                    background: transparent;
+                }
+                h1, h2, h3, h4 { margin-top: 12px; margin-bottom: 4px; }
+                ul, ol { padding-left: 20px; margin: 4px 0; }
+                li { margin: 2px 0; }
+                table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+                th, td { border: 1px solid #ccc; padding: 4px 8px; text-align: left; }
+                th { background: #f5f5f5; font-weight: 600; }
+                p { margin: 4px 0; }
+                @media (prefers-color-scheme: dark) {
+                    body { color: #e0e0e0; }
+                    th { background: #2d2d2d; }
+                    th, td { border-color: #555; }
+                }
+            </style>
+        </head>
+        <body>{{bodyContent}}</body>
+        </html>
+        """;
 
     /// <summary>Font size used for transcript and summary content areas.</summary>
     [ObservableProperty]

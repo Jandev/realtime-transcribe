@@ -91,13 +91,15 @@
                 Stroke="{StaticResource Gray300}"
                 StrokeThickness="1"
                 StrokeShape="RoundRectangle 6">
-                <Editor
-                    AutoSize="TextChanges"
-                    FontSize="{Binding ContentFontSize}"
-                    IsReadOnly="True"
+                <WebView
+                    x:Name="SummaryWebView"
+                    HeightRequest="120"
                     MinimumHeightRequest="120"
-                    Placeholder="Summary and action items will appear here…"
-                    Text="{Binding Summary}" />
+                    Navigated="OnSummaryWebViewNavigated">
+                    <WebView.Source>
+                        <HtmlWebViewSource Html="{Binding SummaryHtml}" />
+                    </WebView.Source>
+                </WebView>
             </Border>
 
             <Button
