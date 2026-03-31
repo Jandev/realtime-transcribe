@@ -64,7 +64,7 @@ public sealed class AudioService : IAudioService, IDisposable
         var session = AVAudioSession.SharedInstance();
         var inputs = session.AvailableInputs;
         if (inputs is { Length: > 0 })
-            return inputs.Select(p => new AudioDevice(p.Uid, p.PortName)).ToArray();
+            return inputs.Select(p => new AudioDevice($"{p.PortType}:{p.PortName}", p.PortName)).ToArray();
 #endif
         return Array.Empty<AudioDevice>();
     }
@@ -75,7 +75,7 @@ public sealed class AudioService : IAudioService, IDisposable
         var session = AVAudioSession.SharedInstance();
         var outputs = session.CurrentRoute?.Outputs;
         if (outputs is { Length: > 0 })
-            return outputs.Select(p => new AudioDevice(p.Uid, p.PortName)).ToArray();
+            return outputs.Select(p => new AudioDevice($"{p.PortType}:{p.PortName}", p.PortName)).ToArray();
 #endif
         return Array.Empty<AudioDevice>();
     }
@@ -186,7 +186,7 @@ public sealed class AudioService : IAudioService, IDisposable
 
         var session = AVAudioSession.SharedInstance();
         var preferred = session.AvailableInputs?
-            .FirstOrDefault(p => p.Uid == _selectedInputDeviceId);
+            .FirstOrDefault(p => $"{p.PortType}:{p.PortName}" == _selectedInputDeviceId);
 
         if (preferred is not null)
             session.SetPreferredInput(preferred, out _);
