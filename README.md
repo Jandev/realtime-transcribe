@@ -19,6 +19,7 @@ Supports Dutch 🇳🇱 and English 🇬🇧 automatically (Whisper auto-detects
 | 🎙 Recording          | Microphone capture (16 kHz mono WAV via Plugin.Maui.Audio)         |
 | 🔊 Full-audio capture | Optional BlackHole loopback (see guide below)                      |
 | 📝 Transcription      | Azure AI Foundry Whisper large-v3                                  |
+| ⚡ Realtime updates   | Transcript updated every 30 s during recording (quota-safe)        |
 | 🤖 Summary            | GPT-4o-mini; concise summary + bullet action items, **rendered as Markdown** |
 | 📄 Markdown rendering | Summary rendered with headings, bold, italic, bullet lists, tables |
 | 🌍 Languages          | Dutch & English auto-detected                                      |
@@ -38,7 +39,35 @@ On hi-res (Retina/HiDPI) displays the default font sizes can feel small. The app
 
 ---
 
-## Requirements
+## Realtime Transcription
+
+While a recording is active the app transcribes audio incrementally rather than waiting until you press Stop.
+
+### How it works
+
+1. **Audio chunking** – every 30 seconds the current audio segment is captured and a fresh segment starts immediately.
+2. **Transcription** – each chunk is sent to Whisper and the resulting text is appended to the transcript shown in the UI.
+3. **Final flush** – when you press Stop, the remaining audio (since the last chunk) is transcribed and appended, then the full accumulated transcript is summarised.
+
+### Quota and rate limits
+
+The default Azure Whisper deployment quota is **3 requests per minute (RPM)**. The 30-second interval produces at most 2 requests per minute, providing a comfortable safety margin.
+
+| Knob | Default | Where to change |
+|------|---------|-----------------|
+| Transcription interval | 30 seconds | `TranscriptionScheduler.DefaultInterval` in `TranscriptionScheduler.cs` |
+
+### Error handling
+
+| Condition | Behaviour |
+|-----------|-----------|
+| Empty audio chunk | Skipped silently; no API call made |
+| Transient Whisper API error | Chunk skipped; next interval retries automatically |
+| Recording start failure | Error shown in status bar; scheduler not started |
+
+---
+
+
 
 - macOS 14 Sonoma or later
 - .NET 10 SDK with the **MAUI workload** (`dotnet workload install maui`)
@@ -238,7 +267,9 @@ The `Info.plist` contains:
 | No microphone permission  | User-friendly status message                                  |
 | Azure auth failure        | Exception message shown in status                             |
 | Empty recording           | Skips transcription/summarisation                             |
-| Long recordings (>30 min) | Whisper file-size limit is 25 MB; chunk large files if needed |
+| Long recordings (>30 min) | Audio chunked every 30 s; each chunk ≤ 25 MB Whisper limit    |
+| Quota limits              | One Whisper request every 30 s; safely within 3 RPM default    |
+| Transient API failure     | Failed chunk skipped; transcript continues on next interval     |
 | Network errors            | Exception message shown in status                             |
 | Operation cancel          | Graceful cancellation via CancellationToken                   |
 | Markdown rendering error  | Falls back to minimum height; raw Markdown still in clipboard |

@@ -15,4 +15,13 @@ public interface ITranscriptionService
     /// from <paramref name="transcript"/>.
     /// </summary>
     Task<string> SummarizeAsync(string transcript, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Streams summary tokens to <paramref name="onToken"/> as they arrive from the model,
+    /// allowing the UI to update incrementally.
+    /// </summary>
+    /// <param name="transcript">The full meeting transcript to summarise.</param>
+    /// <param name="onToken">Async callback invoked with each streamed token fragment.</param>
+    /// <param name="cancellationToken">Token that cancels the streaming request.</param>
+    Task SummarizeStreamingAsync(string transcript, Func<string, Task> onToken, CancellationToken cancellationToken = default);
 }

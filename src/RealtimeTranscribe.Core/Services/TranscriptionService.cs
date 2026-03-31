@@ -50,10 +50,15 @@ public class TranscriptionService : ITranscriptionService
         _settings = settings;
     }
 
+    // A standard PCM WAV file has a 44-byte header (RIFF/fmt/data chunk descriptors) with
+    // no audio sample data.  Any payload at or below this size contains no speech and must
+    // not be sent to Whisper to avoid unnecessary API charges.
+    private const int MinAudioDataBytes = 44;
+
     /// <inheritdoc/>
     public async Task<string> TranscribeAsync(byte[] wavBytes, CancellationToken cancellationToken = default)
     {
-        if (wavBytes.Length == 0)
+        if (wavBytes.Length <= MinAudioDataBytes)
             return string.Empty;
 
         var client = BuildAzureClient();
@@ -82,6 +87,33 @@ public class TranscriptionService : ITranscriptionService
 
         var response = await chatClient.CompleteChatAsync(messages, cancellationToken: cancellationToken);
         return response.Value.Content[0].Text;
+    }
+
+    /// <inheritdoc/>
+    public async Task SummarizeStreamingAsync(string transcript, Func<string, Task> onToken, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(transcript))
+            return;
+
+        var client = BuildAzureClient();
+        var chatClient = client.GetChatClient(_settings.ChatDeploymentName);
+
+        var messages = new List<ChatMessage>
+        {
+            new SystemChatMessage(SummarisationSystemPrompt),
+            new UserChatMessage($"Transcript:\n\n{transcript}")
+        };
+
+        var streaming = chatClient.CompleteChatStreamingAsync(messages, cancellationToken: cancellationToken);
+
+        await foreach (var update in streaming.WithCancellation(cancellationToken))
+        {
+            foreach (var part in update.ContentUpdate)
+            {
+                if (!string.IsNullOrEmpty(part.Text))
+                    await onToken(part.Text);
+            }
+        }
     }
 
     private AzureOpenAIClient BuildAzureClient()
