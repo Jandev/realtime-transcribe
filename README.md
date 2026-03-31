@@ -230,6 +230,35 @@ The `Info.plist` contains:
 
 ---
 
+## Bluetooth & Wireless Device Support
+
+Wireless audio devices (AirPods, Bluetooth headsets, etc.) connect and disconnect on demand, which can disrupt an active recording session. The app is designed to handle these interruptions gracefully:
+
+- **Mid-recording disconnection** – if the active input device disappears (e.g. AirPods put back in their case), the app automatically stops the recording, retrieves any audio captured up to that point, and continues to transcription as normal. A warning message is shown in the status bar.
+
+- **Failed recording start** – if the selected audio device is unavailable when you press **Start Recording**, an error message is shown and no recording is attempted. Simply reconnect the device and try again.
+
+### Recommendations for a stable setup
+
+| Approach | Stability | Notes |
+|---|---|---|
+| Built-in microphone | ✅ Most stable | Always available; recommended baseline |
+| BlackHole aggregate (built-in mic + BlackHole) | ✅ Stable | Use this for capturing system audio (Teams/Zoom); built-in mic is always present |
+| Bluetooth device as system default input | ⚠️ Moderate | Works well while connected; recording auto-saves on disconnect |
+| Bluetooth device inside an aggregate device | ❌ Fragile | macOS removes the Bluetooth port from the aggregate on disconnect; **avoid this setup** |
+
+### Recommended Bluetooth workflow
+
+1. Keep your Bluetooth device **outside** the aggregate device configuration in Audio MIDI Setup.
+2. When you want to record from Bluetooth, either:
+   - Set the Bluetooth device as the **system default input** directly in **System Preferences → Sound → Input**, or
+   - Record from the built-in mic / BlackHole aggregate and route Bluetooth audio through a multi-output device to BlackHole.
+3. If you put your device away mid-recording, the app will save whatever was captured and proceed to transcription automatically.
+
+> **Note:** When a Bluetooth device reconnects, macOS does not automatically add it back to a previously configured aggregate device. For the most seamless experience, avoid including Bluetooth devices in aggregate device configurations and use them as a standalone system input instead.
+
+---
+
 ## Edge Cases
 
 | Scenario                  | Handling                                                      |
@@ -240,6 +269,8 @@ The `Info.plist` contains:
 | Long recordings (>30 min) | Whisper file-size limit is 25 MB; chunk large files if needed |
 | Network errors            | Exception message shown in status                             |
 | Operation cancel          | Graceful cancellation via CancellationToken                   |
+| Bluetooth device disconnects mid-recording | Auto-stops, saves captured audio, proceeds to transcription |
+| Bluetooth device unavailable at recording start | Error message shown; reconnect and retry |
 
 ---
 

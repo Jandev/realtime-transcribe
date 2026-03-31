@@ -20,6 +20,9 @@ public partial class MainViewModel : ObservableObject
         _audioService = audioService;
         _transcriptionService = transcriptionService;
 
+        // React when a Bluetooth / wireless input device disconnects mid-recording.
+        _audioService.RecordingInterrupted += OnRecordingInterrupted;
+
         // Restore persisted font size, clamping any out-of-range value to a safe default.
         _contentFontSize = TextScaleService.Restore(
             Preferences.Default.Get(TextScaleService.PreferenceKey, TextScaleService.Default));
@@ -140,6 +143,31 @@ public partial class MainViewModel : ObservableObject
         {
             StatusMessage = $"Error starting recording: {ex.Message}";
         }
+    }
+
+    /// <summary>
+    /// Called when the audio input device becomes unavailable during an active recording
+    /// (e.g. AirPods placed back in their case). Dispatches to the UI thread and triggers
+    /// a graceful stop so any captured audio is still processed.
+    /// </summary>
+    private void OnRecordingInterrupted(object? sender, EventArgs e)
+    {
+        if (!IsRecording)
+            return;
+
+        MainThread.BeginInvokeOnMainThread(async () =>
+        {
+            try
+            {
+                StatusMessage = "⚠️ Audio device disconnected — saving recording…";
+                await StopAndProcessAsync();
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error handling device disconnection: {ex.Message}";
+                IsProcessing = false;
+            }
+        });
     }
 
     private async Task StopAndProcessAsync()
