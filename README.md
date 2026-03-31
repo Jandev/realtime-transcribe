@@ -19,11 +19,47 @@ Supports Dutch 🇳🇱 and English 🇬🇧 automatically (Whisper auto-detects
 | 🎙 Recording          | Microphone capture (16 kHz mono WAV via Plugin.Maui.Audio)         |
 | 🔊 Full-audio capture | Optional BlackHole loopback (see guide below)                      |
 | 📝 Transcription      | Azure AI Foundry Whisper large-v3                                  |
-| 🤖 Summary            | GPT-4o-mini; concise 3-sentence summary + bullet action items      |
+| 👥 Speaker recognition | GPT-based speaker diarization; labels turns as Speaker 1, 2, …   |
+| ⚡ Realtime updates   | Transcript updated every 30 s during recording (quota-safe)        |
+| 🤖 Summary            | GPT-4o-mini; concise summary + bullet action items, **rendered as Markdown** |
+| 📄 Markdown rendering | Summary rendered with headings, bold, italic, bullet lists, tables |
 | 🌍 Languages          | Dutch & English auto-detected                                      |
 | ⚙️ Settings UI        | Endpoint / API key configurable in-app (persisted via Preferences) |
-| 📋 Copy buttons       | One-tap copy of transcript or summary to clipboard                 |
+| 📋 Copy buttons       | One-tap copy of transcript, speaker transcript, or summary (summary copied as Markdown text) |
 | 🔡 Text scaling       | A− / A+ buttons zoom transcript & summary text (10–28 pt); choice persisted across restarts |
+
+---
+
+## Speaker Recognition
+
+After transcription the app automatically runs a **GPT-based speaker diarization** step that
+analyses conversational patterns in the transcript text and labels each turn as *Speaker 1*,
+*Speaker 2*, and so on.  The result is displayed in the **Speaker-Attributed Transcript** section
+of the UI and can be copied to the clipboard.
+
+### How it works
+
+1. Whisper produces a plain-text transcript (no timing or audio-fingerprint data is retained).
+2. The transcript is sent to the configured GPT deployment with a diarization prompt.
+3. GPT identifies turn boundaries from conversational cues (questions, topic shifts, greetings,
+   etc.) and returns the transcript formatted as `Speaker N: …` lines.
+4. The app displays the formatted result and preserves the raw transcript unchanged.
+
+### Known limitations and caveats
+
+| Limitation | Detail |
+|---|---|
+| Text-based, not audio-based | Speaker identification relies on conversational context in the text, not on voice fingerprints. Two speakers with similar speaking styles may be merged. |
+| Single-speaker fallback | If GPT cannot detect distinct speakers, all text is labelled *Speaker 1*. |
+| Overlapping speech | Whisper produces sequential text; simultaneous speech is merged and cannot be separated. |
+| Accuracy varies by language | Diarization quality follows Whisper's transcription quality for that language. |
+| Confidence | GPT does not produce confidence scores for speaker assignments. |
+| No persistent speaker identity | Speaker labels reset for every new recording (Speaker 1 in one session is not the same person as Speaker 1 in another). |
+
+### No additional Azure services required
+
+Speaker diarization reuses the same GPT deployment already configured for summarisation —
+no extra Azure resources, roles, or credentials are needed.
 
 ---
 
@@ -36,6 +72,36 @@ On hi-res (Retina/HiDPI) displays the default font sizes can feel small. The app
 - **Scope:** scaling affects the transcript and summary reading areas. Controls, labels, and system chrome outside the app are not affected.
 
 ---
+
+## Realtime Transcription
+
+While a recording is active the app transcribes audio incrementally rather than waiting until you press Stop.
+
+### How it works
+
+1. **Audio chunking** – every 30 seconds the current audio segment is captured and a fresh segment starts immediately.
+2. **Transcription** – each chunk is sent to Whisper and the resulting text is appended to the transcript shown in the UI.
+3. **Final flush** – when you press Stop, the remaining audio (since the last chunk) is transcribed and appended, then the full accumulated transcript is summarised.
+
+### Quota and rate limits
+
+The default Azure Whisper deployment quota is **3 requests per minute (RPM)**. The 30-second interval produces at most 2 requests per minute, providing a comfortable safety margin.
+
+| Knob | Default | Where to change |
+|------|---------|-----------------|
+| Transcription interval | 30 seconds | `TranscriptionScheduler.DefaultInterval` in `TranscriptionScheduler.cs` |
+
+### Error handling
+
+| Condition | Behaviour |
+|-----------|-----------|
+| Empty audio chunk | Skipped silently; no API call made |
+| Transient Whisper API error | Chunk skipped; next interval retries automatically |
+| Recording start failure | Error shown in status bar; scheduler not started |
+
+---
+
+
 
 ## Requirements
 
@@ -261,16 +327,49 @@ Wireless audio devices (AirPods, Bluetooth headsets, etc.) connect and disconnec
 
 ## Edge Cases
 
-| Scenario                  | Handling                                                      |
-| ------------------------- | ------------------------------------------------------------- |
-| No microphone permission  | User-friendly status message                                  |
-| Azure auth failure        | Exception message shown in status                             |
-| Empty recording           | Skips transcription/summarisation                             |
-| Long recordings (>30 min) | Whisper file-size limit is 25 MB; chunk large files if needed |
-| Network errors            | Exception message shown in status                             |
-| Operation cancel          | Graceful cancellation via CancellationToken                   |
+| Scenario                        | Handling                                                      |
+| ------------------------------- | ------------------------------------------------------------- |
+| No microphone permission        | User-friendly status message                                  |
+| Azure auth failure              | Exception message shown in status                             |
+| Empty recording                 | Skips transcription/summarisation                             |
+| Long recordings (>30 min)       | Audio chunked every 30 s; each chunk ≤ 25 MB Whisper limit    |
+| Quota limits                    | One Whisper request every 30 s; safely within 3 RPM default    |
+| Transient API failure           | Failed chunk skipped; transcript continues on next interval     |
+| Network errors                  | Exception message shown in status                             |
+| Operation cancel                | Graceful cancellation via CancellationToken                   |
+| Single speaker in recording     | Diarization returns all text labelled as *Speaker 1*          |
+| GPT returns no speaker markers  | `TranscriptFormatter` fallback wraps text in *Speaker 1*      |
+| Markdown rendering error        | Falls back to minimum height; raw Markdown still in clipboard |
 | Bluetooth device disconnects mid-recording | Auto-stops, saves captured audio, proceeds to transcription |
 | Bluetooth device unavailable at recording start | Error message shown; reconnect and retry |
+
+---
+
+## Markdown Support
+
+The summary is formatted in Markdown by GPT-4o-mini and rendered in the UI using a `WebView` with embedded CSS.
+
+### Supported elements (summary only)
+
+| Element  | Example                      |
+| -------- | ---------------------------- |
+| Headings | `## Summary`, `## Action Items` |
+| Bold     | `**key term**`               |
+| Italic   | `*emphasis*`                 |
+| Bullets  | `- action item`              |
+| Tables   | `\| Column \| Value \|`      |
+
+### Transcript
+
+The transcript remains plain text and is **not** Markdown-processed.
+
+### Copy behavior
+
+The **Copy Summary** button copies the raw Markdown text to the clipboard. Paste it into any Markdown-aware editor (e.g., Obsidian, VS Code, Notion) to retain formatting.
+
+### Security
+
+Raw HTML embedded in the AI response is HTML-encoded (escaped) by the Markdown renderer so it cannot execute in the WebView. JavaScript from the model output is never run.
 
 ---
 

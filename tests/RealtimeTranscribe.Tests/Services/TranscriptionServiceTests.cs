@@ -35,6 +35,51 @@ public class TranscriptionServiceTests
     }
 
     [Fact]
+    public async Task TranscribeAsync_WithWavHeaderOnlyBytes_ReturnsEmptyString()
+    {
+        // A standard PCM WAV header is 44 bytes.  A payload at or below that size
+        // contains no audio samples and must not be forwarded to Whisper.
+        var service = CreateService();
+        var headerOnlyWav = new byte[44]; // exactly the header, no audio data
+
+        var result = await service.TranscribeAsync(headerOnlyWav);
+
+        Assert.Equal(string.Empty, result);
+    }
+
+    [Fact]
+    public async Task TranscribeAsync_WithBytesJustBelowThreshold_ReturnsEmptyString()
+    {
+        // Any payload smaller than the 44-byte WAV header is also invalid.
+        var service = CreateService();
+        var tooSmall = new byte[10];
+
+        var result = await service.TranscribeAsync(tooSmall);
+
+        Assert.Equal(string.Empty, result);
+    }
+
+    [Fact]
+    public async Task DiarizeAsync_WithEmptyTranscript_ReturnsEmptyString()
+    {
+        var service = CreateService();
+
+        var result = await service.DiarizeAsync(string.Empty);
+
+        Assert.Equal(string.Empty, result);
+    }
+
+    [Fact]
+    public async Task DiarizeAsync_WithWhitespaceTranscript_ReturnsEmptyString()
+    {
+        var service = CreateService();
+
+        var result = await service.DiarizeAsync("   ");
+
+        Assert.Equal(string.Empty, result);
+    }
+
+    [Fact]
     public async Task SummarizeAsync_WithEmptyTranscript_ReturnsEmptyString()
     {
         var service = CreateService();

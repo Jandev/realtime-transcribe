@@ -81,11 +81,11 @@
                 Text="📋  Copy Transcript"
                 Style="{StaticResource SecondaryButton}" />
 
-            <!-- Summary section -->
+            <!-- Speaker-Attributed Transcript section -->
             <Label
                 FontAttributes="Bold"
                 FontSize="{Binding HeadingFontSize}"
-                Text="Summary &amp; Action Items" />
+                Text="Speaker-Attributed Transcript" />
 
             <Border
                 Stroke="{StaticResource Gray300}"
@@ -96,8 +96,35 @@
                     FontSize="{Binding ContentFontSize}"
                     IsReadOnly="True"
                     MinimumHeightRequest="120"
-                    Placeholder="Summary and action items will appear here…"
-                    Text="{Binding Summary}" />
+                    Placeholder="Speaker-attributed transcript will appear here after recording…"
+                    Text="{Binding DiarizedTranscript}" />
+            </Border>
+
+            <Button
+                Command="{Binding CopyDiarizedTranscriptCommand}"
+                HorizontalOptions="End"
+                Text="📋  Copy Speaker Transcript"
+                Style="{StaticResource SecondaryButton}" />
+
+            <!-- Summary section -->
+            <Label
+                FontAttributes="Bold"
+                FontSize="{Binding HeadingFontSize}"
+                Text="Summary &amp; Action Items" />
+
+            <Border
+                Stroke="{StaticResource Gray300}"
+                StrokeThickness="1"
+                StrokeShape="RoundRectangle 6">
+                <WebView
+                    x:Name="SummaryWebView"
+                    HeightRequest="120"
+                    MinimumHeightRequest="120"
+                    Navigated="OnSummaryWebViewNavigated">
+                    <WebView.Source>
+                        <HtmlWebViewSource Html="{Binding SummaryHtml}" />
+                    </WebView.Source>
+                </WebView>
             </Border>
 
             <Button

@@ -31,6 +31,12 @@ public class AudioServiceContractTests
             return Task.FromResult(new byte[] { 0x52, 0x49, 0x46, 0x46 }); // minimal WAV header
         }
 
+        public Task<byte[]> GetCurrentChunkAsync()
+        {
+            // Return a minimal audio chunk without changing IsRecording.
+            return Task.FromResult(new byte[] { 0x52, 0x49, 0x46, 0x46 });
+        }
+
         /// <summary>Simulates a Bluetooth device disconnecting mid-recording.</summary>
         public void SimulateDeviceDisconnect() =>
             RecordingInterrupted?.Invoke(this, EventArgs.Empty);

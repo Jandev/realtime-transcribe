@@ -91,4 +91,22 @@ public sealed class AudioService : IAudioService, IDisposable
 #endif
         GC.SuppressFinalize(this);
     }
+
+    public async Task<byte[]> GetCurrentChunkAsync()
+    {
+        if (_recorder is null || !_recorder.IsRecording)
+            return Array.Empty<byte>();
+
+        // Stop the current recording to capture the audio so far.
+        var audioSource = await _recorder.StopAsync();
+
+        // Immediately start a fresh recording segment.
+        _recorder = _audioManager.CreateRecorder();
+        await _recorder.StartAsync();
+
+        using var stream = audioSource.GetAudioStream();
+        using var ms = new MemoryStream();
+        await stream.CopyToAsync(ms);
+        return ms.ToArray();
+    }
 }
