@@ -37,6 +37,9 @@ public partial class MainViewModel : ObservableObject
         // React when a Bluetooth / wireless input device disconnects mid-recording.
         _audioService.RecordingInterrupted += OnRecordingInterrupted;
 
+        // React when the user changes the selected input or output recording device.
+        _audioService.DeviceSelectionChanged += OnDeviceSelectionChanged;
+
         // Restore persisted font size, clamping any out-of-range value to a safe default.
         _contentFontSize = TextScaleService.Restore(
             Preferences.Default.Get(TextScaleService.PreferenceKey, TextScaleService.Default));
@@ -226,6 +229,9 @@ public partial class MainViewModel : ObservableObject
     // Delay (ms) between each character when animating new transcript text into the UI.
     private const int TranscriptAnimationDelayMs = 20;
 
+    // Timeout (seconds) for transcribing buffered audio when switching devices mid-recording.
+    private const int DeviceSwitchTranscriptionTimeoutSeconds = 30;
+
     private async Task RunSchedulerAsync(CancellationToken cancellationToken)
     {
         await _transcriptionScheduler.RunAsync(
@@ -302,6 +308,89 @@ public partial class MainViewModel : ObservableObject
                 IsProcessing = false;
             }
         });
+    }
+
+    /// <summary>
+    /// Called when the user changes the selected input or output recording device.
+    /// If recording is in progress, the current session is stopped, the buffered audio is
+    /// captured and transcribed into the running transcript, and then recording restarts
+    /// immediately on the newly-selected device.
+    /// </summary>
+    private void OnDeviceSelectionChanged(object? sender, EventArgs e)
+    {
+        if (!IsRecording)
+            return;
+
+        MainThread.BeginInvokeOnMainThread(async () =>
+        {
+            try
+            {
+                StatusMessage = "🔄 Device changed — restarting recording…";
+                await StopAndRestartRecordingAsync();
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error restarting recording: {ex.Message}";
+                IsRecording = false;
+            }
+        });
+    }
+
+    /// <summary>
+    /// Stops the current recording session, captures and transcribes any buffered audio,
+    /// then immediately restarts recording on the newly-selected device.
+    /// Unlike <see cref="StopAndProcessAsync"/>, this method does not run speaker
+    /// diarisation or summarisation — those are deferred until the user stops recording.
+    /// </summary>
+    private async Task StopAndRestartRecordingAsync()
+    {
+        // Stop the realtime scheduler.
+        _schedulerCts?.Cancel();
+
+        StatusMessage = "🔄 Capturing audio before device switch…";
+
+        try
+        {
+            if (_schedulerTask is not null)
+            {
+                try { await _schedulerTask; }
+                catch (OperationCanceledException) { }
+                _schedulerTask = null;
+            }
+
+            // Retrieve whatever audio was buffered before the device change.
+            var wav = await _audioService.StopRecordingAsync();
+            IsRecording = false;
+
+            if (wav.Length > 0)
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(DeviceSwitchTranscriptionTimeoutSeconds));
+                StatusMessage = "🔄 Transcribing buffered audio…";
+                var segment = await _transcriptionService.TranscribeAsync(wav, cts.Token);
+                if (!string.IsNullOrEmpty(segment))
+                {
+                    _transcriptSegments.Add(segment);
+                    await AppendToTranscriptAsync(segment, cts.Token);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[MainViewModel] Error capturing audio before device switch: {ex}");
+        }
+        finally
+        {
+            _schedulerCts?.Dispose();
+            _schedulerCts = null;
+        }
+
+        // Restart recording on the newly-selected device.
+        await _audioService.StartRecordingAsync();
+        IsRecording = true;
+        StatusMessage = "🔴 Recording…";
+
+        _schedulerCts = new CancellationTokenSource();
+        _schedulerTask = RunSchedulerAsync(_schedulerCts.Token);
     }
 
     private async Task StopAndProcessAsync()

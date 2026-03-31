@@ -1,3 +1,4 @@
+using RealtimeTranscribe.Models;
 using RealtimeTranscribe.Services;
 using Xunit;
 
@@ -18,6 +19,34 @@ public class AudioServiceContractTests
         public bool IsRecording { get; set; }
 
         public event EventHandler? RecordingInterrupted;
+        public event EventHandler? DeviceSelectionChanged;
+
+        private string? _selectedInputDeviceId;
+        private string? _selectedOutputDeviceId;
+
+        private readonly List<AudioDevice> _inputDevices = [];
+        private readonly List<AudioDevice> _outputDevices = [];
+
+        public string? SelectedInputDeviceId => _selectedInputDeviceId;
+        public string? SelectedOutputDeviceId => _selectedOutputDeviceId;
+
+        public IReadOnlyList<AudioDevice> GetInputDevices() => _inputDevices;
+        public IReadOnlyList<AudioDevice> GetOutputDevices() => _outputDevices;
+
+        public void SetSelectedInputDevice(string? deviceId)
+        {
+            _selectedInputDeviceId = deviceId;
+            DeviceSelectionChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        public void SetSelectedOutputDevice(string? deviceId)
+        {
+            _selectedOutputDeviceId = deviceId;
+            DeviceSelectionChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        public void AddInputDevice(AudioDevice device) => _inputDevices.Add(device);
+        public void AddOutputDevice(AudioDevice device) => _outputDevices.Add(device);
 
         public Task StartRecordingAsync()
         {
@@ -95,5 +124,102 @@ public class AudioServiceContractTests
         var bytes = await service.StopRecordingAsync();
 
         Assert.NotEmpty(bytes);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Device selection contract tests
+    // ---------------------------------------------------------------------------
+
+    [Fact]
+    public void GetInputDevices_ReturnsRegisteredDevices()
+    {
+        var service = new FakeAudioService();
+        service.AddInputDevice(new AudioDevice("mic-1", "Built-in Microphone"));
+        service.AddInputDevice(new AudioDevice("mic-2", "USB Headset"));
+
+        var devices = service.GetInputDevices();
+
+        Assert.Equal(2, devices.Count);
+        Assert.Contains(devices, d => d.Id == "mic-1" && d.Name == "Built-in Microphone");
+        Assert.Contains(devices, d => d.Id == "mic-2" && d.Name == "USB Headset");
+    }
+
+    [Fact]
+    public void GetOutputDevices_ReturnsRegisteredDevices()
+    {
+        var service = new FakeAudioService();
+        service.AddOutputDevice(new AudioDevice("spk-1", "Built-in Speaker"));
+
+        var devices = service.GetOutputDevices();
+
+        Assert.Single(devices);
+        Assert.Equal("spk-1", devices[0].Id);
+    }
+
+    [Fact]
+    public void SetSelectedInputDevice_UpdatesSelectedInputDeviceId()
+    {
+        var service = new FakeAudioService();
+        service.AddInputDevice(new AudioDevice("mic-1", "Built-in Microphone"));
+
+        service.SetSelectedInputDevice("mic-1");
+
+        Assert.Equal("mic-1", service.SelectedInputDeviceId);
+    }
+
+    [Fact]
+    public void SetSelectedInputDevice_RaisesDeviceSelectionChanged()
+    {
+        var service = new FakeAudioService();
+        var raised = false;
+        service.DeviceSelectionChanged += (_, _) => raised = true;
+
+        service.SetSelectedInputDevice("mic-1");
+
+        Assert.True(raised);
+    }
+
+    [Fact]
+    public void SetSelectedOutputDevice_UpdatesSelectedOutputDeviceId()
+    {
+        var service = new FakeAudioService();
+        service.AddOutputDevice(new AudioDevice("spk-1", "Built-in Speaker"));
+
+        service.SetSelectedOutputDevice("spk-1");
+
+        Assert.Equal("spk-1", service.SelectedOutputDeviceId);
+    }
+
+    [Fact]
+    public void SetSelectedOutputDevice_RaisesDeviceSelectionChanged()
+    {
+        var service = new FakeAudioService();
+        var raised = false;
+        service.DeviceSelectionChanged += (_, _) => raised = true;
+
+        service.SetSelectedOutputDevice("spk-1");
+
+        Assert.True(raised);
+    }
+
+    [Fact]
+    public void SetSelectedInputDevice_WithNull_ClearsSelection()
+    {
+        var service = new FakeAudioService();
+        service.SetSelectedInputDevice("mic-1");
+
+        service.SetSelectedInputDevice(null);
+
+        Assert.Null(service.SelectedInputDeviceId);
+    }
+
+    [Fact]
+    public void DeviceSelectionChanged_WithNoSubscribers_DoesNotThrow()
+    {
+        var service = new FakeAudioService();
+
+        var exception = Record.Exception(() => service.SetSelectedInputDevice("mic-1"));
+
+        Assert.Null(exception);
     }
 }

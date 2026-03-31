@@ -1,3 +1,5 @@
+using RealtimeTranscribe.Models;
+
 namespace RealtimeTranscribe.Services;
 
 /// <summary>
@@ -14,7 +16,58 @@ public interface IAudioService
     /// </summary>
     event EventHandler? RecordingInterrupted;
 
-    /// <summary>Starts capturing audio from the default microphone.</summary>
+    /// <summary>
+    /// Raised when the user changes the selected input or output device.
+    /// Subscribers (e.g. <c>MainViewModel</c>) should stop and restart any in-progress
+    /// recording so the new device takes effect immediately.
+    /// </summary>
+    event EventHandler? DeviceSelectionChanged;
+
+    // ------------------------------------------------------------------
+    // Device enumeration
+    // ------------------------------------------------------------------
+
+    /// <summary>Returns all available audio input devices (e.g. microphones).</summary>
+    IReadOnlyList<AudioDevice> GetInputDevices();
+
+    /// <summary>Returns all available audio output devices (e.g. speakers, headphones).</summary>
+    IReadOnlyList<AudioDevice> GetOutputDevices();
+
+    // ------------------------------------------------------------------
+    // Device selection
+    // ------------------------------------------------------------------
+
+    /// <summary>
+    /// The ID of the currently selected input device, or <see langword="null"/> to use the
+    /// system default.
+    /// </summary>
+    string? SelectedInputDeviceId { get; }
+
+    /// <summary>
+    /// The ID of the currently selected output device, or <see langword="null"/> to use the
+    /// system default.
+    /// </summary>
+    string? SelectedOutputDeviceId { get; }
+
+    /// <summary>
+    /// Selects the input device with the given <paramref name="deviceId"/>. Pass
+    /// <see langword="null"/> to revert to the system default.
+    /// Raises <see cref="DeviceSelectionChanged"/> after applying the change.
+    /// </summary>
+    void SetSelectedInputDevice(string? deviceId);
+
+    /// <summary>
+    /// Selects the output device with the given <paramref name="deviceId"/>. Pass
+    /// <see langword="null"/> to revert to the system default.
+    /// Raises <see cref="DeviceSelectionChanged"/> after applying the change.
+    /// </summary>
+    void SetSelectedOutputDevice(string? deviceId);
+
+    // ------------------------------------------------------------------
+    // Recording
+    // ------------------------------------------------------------------
+
+    /// <summary>Starts capturing audio from the selected (or default) input device.</summary>
     Task StartRecordingAsync();
 
     /// <summary>
