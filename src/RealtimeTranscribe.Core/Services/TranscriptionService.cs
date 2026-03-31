@@ -47,19 +47,26 @@ public class TranscriptionService : ITranscriptionService
         "You are an assistant that analyses meeting transcripts. " +
         "The transcript may be in Dutch or English. " +
         "Respond in the same language as the transcript. " +
+        "Format your entire response using Markdown. " +
         "Always respond with: " +
-        "1. A concise summary of no more than three sentences. " +
-        "2. A bullet-point list of action items / tasks identified in the meeting.";
+        "1. A '## Summary' heading followed by a concise summary of no more than three sentences. " +
+        "2. A '## Action Items' heading followed by a bullet-point list of action items / tasks identified in the meeting. " +
+        "Use **bold** for key terms and *italic* for emphasis where appropriate.";
 
     public TranscriptionService(AzureOpenAISettings settings)
     {
         _settings = settings;
     }
 
+    // A standard PCM WAV file has a 44-byte header (RIFF/fmt/data chunk descriptors) with
+    // no audio sample data.  Any payload at or below this size contains no speech and must
+    // not be sent to Whisper to avoid unnecessary API charges.
+    private const int MinAudioDataBytes = 44;
+
     /// <inheritdoc/>
     public async Task<string> TranscribeAsync(byte[] wavBytes, CancellationToken cancellationToken = default)
     {
-        if (wavBytes.Length == 0)
+        if (wavBytes.Length <= MinAudioDataBytes)
             return string.Empty;
 
         var client = BuildAzureClient();
@@ -107,6 +114,33 @@ public class TranscriptionService : ITranscriptionService
 
         var response = await chatClient.CompleteChatAsync(messages, cancellationToken: cancellationToken);
         return response.Value.Content[0].Text;
+    }
+
+    /// <inheritdoc/>
+    public async Task SummarizeStreamingAsync(string transcript, Func<string, Task> onToken, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(transcript))
+            return;
+
+        var client = BuildAzureClient();
+        var chatClient = client.GetChatClient(_settings.ChatDeploymentName);
+
+        var messages = new List<ChatMessage>
+        {
+            new SystemChatMessage(SummarisationSystemPrompt),
+            new UserChatMessage($"Transcript:\n\n{transcript}")
+        };
+
+        var streaming = chatClient.CompleteChatStreamingAsync(messages, cancellationToken: cancellationToken);
+
+        await foreach (var update in streaming.WithCancellation(cancellationToken))
+        {
+            foreach (var part in update.ContentUpdate)
+            {
+                if (!string.IsNullOrEmpty(part.Text))
+                    await onToken(part.Text);
+            }
+        }
     }
 
     private AzureOpenAIClient BuildAzureClient()
