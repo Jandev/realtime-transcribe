@@ -6,7 +6,7 @@ namespace RealtimeTranscribe.ViewModels;
 
 /// <summary>
 /// ViewModel for <see cref="MainPage"/>.
-/// Handles Record / Stop logic, transcription and summarisation.
+/// Handles Record / Stop logic, transcription, summarisation, and in-app font scaling.
 /// </summary>
 public partial class MainViewModel : ObservableObject
 {
@@ -21,6 +21,10 @@ public partial class MainViewModel : ObservableObject
         _audioService = audioService;
         _transcriptionService = transcriptionService;
         _markdownProcessor = markdownProcessor;
+
+        // Restore persisted font size, clamping any out-of-range value to a safe default.
+        _contentFontSize = TextScaleService.Restore(
+            Preferences.Default.Get(TextScaleService.PreferenceKey, TextScaleService.Default));
     }
 
     [ObservableProperty]
@@ -93,6 +97,16 @@ public partial class MainViewModel : ObservableObject
         </html>
         """;
 
+    /// <summary>Font size used for transcript and summary content areas.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HeadingFontSize))]
+    [NotifyCanExecuteChangedFor(nameof(IncreaseFontSizeCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DecreaseFontSizeCommand))]
+    private double _contentFontSize;
+
+    /// <summary>Font size used for section-heading labels (2 units larger than content).</summary>
+    public double HeadingFontSize => _contentFontSize + 2.0;
+
     public string RecordButtonText => IsRecording ? "⏹  Stop Recording" : IsProcessing ? "⏳  Processing…" : "🎙  Start Recording";
 
     public bool CanRecord => !IsProcessing;
@@ -129,6 +143,23 @@ public partial class MainViewModel : ObservableObject
     private async Task CopySummaryAsync()
     {
         await Clipboard.Default.SetTextAsync(Summary);
+    }
+
+    private bool CanIncreaseFontSize => ContentFontSize < TextScaleService.Maximum;
+    private bool CanDecreaseFontSize => ContentFontSize > TextScaleService.Minimum;
+
+    [RelayCommand(CanExecute = nameof(CanIncreaseFontSize))]
+    private void IncreaseFontSize()
+    {
+        ContentFontSize = TextScaleService.Increment(ContentFontSize);
+        Preferences.Default.Set(TextScaleService.PreferenceKey, ContentFontSize);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanDecreaseFontSize))]
+    private void DecreaseFontSize()
+    {
+        ContentFontSize = TextScaleService.Decrement(ContentFontSize);
+        Preferences.Default.Set(TextScaleService.PreferenceKey, ContentFontSize);
     }
 
     private bool HasTranscript => !string.IsNullOrEmpty(Transcript) && !IsRecording && !IsProcessing;
