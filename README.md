@@ -20,10 +20,22 @@ Supports Dutch 🇳🇱 and English 🇬🇧 automatically (Whisper auto-detects
 | 🔊 Full-audio capture | Optional BlackHole loopback (see guide below)                      |
 | 📝 Transcription      | Azure AI Foundry Whisper large-v3                                  |
 | ⚡ Realtime updates   | Transcript updated every 30 s during recording (quota-safe)        |
-| 🤖 Summary            | GPT-4o-mini; concise 3-sentence summary + bullet action items      |
+| 🤖 Summary            | GPT-4o-mini; concise summary + bullet action items, **rendered as Markdown** |
+| 📄 Markdown rendering | Summary rendered with headings, bold, italic, bullet lists, tables |
 | 🌍 Languages          | Dutch & English auto-detected                                      |
 | ⚙️ Settings UI        | Endpoint / API key configurable in-app (persisted via Preferences) |
-| 📋 Copy buttons       | One-tap copy of transcript or summary to clipboard                 |
+| 📋 Copy buttons       | One-tap copy of transcript or summary to clipboard (summary copied as Markdown text) |
+| 🔡 Text scaling       | A− / A+ buttons zoom transcript & summary text (10–28 pt); choice persisted across restarts |
+
+---
+
+## Text Scaling / Readability
+
+On hi-res (Retina/HiDPI) displays the default font sizes can feel small. The app ships with a slightly larger default (15 pt) and includes **A−** / **A+** controls on the main screen to adjust the transcript and summary text size at any time.
+
+- **Range:** 10 pt → 28 pt, stepped in 2 pt increments.
+- **Persisted:** the selected size is stored in the platform preferences and restored on next launch.
+- **Scope:** scaling affects the transcript and summary reading areas. Controls, labels, and system chrome outside the app are not affected.
 
 ---
 
@@ -260,6 +272,35 @@ The `Info.plist` contains:
 | Transient API failure     | Failed chunk skipped; transcript continues on next interval     |
 | Network errors            | Exception message shown in status                             |
 | Operation cancel          | Graceful cancellation via CancellationToken                   |
+| Markdown rendering error  | Falls back to minimum height; raw Markdown still in clipboard |
+
+---
+
+## Markdown Support
+
+The summary is formatted in Markdown by GPT-4o-mini and rendered in the UI using a `WebView` with embedded CSS.
+
+### Supported elements (summary only)
+
+| Element  | Example                      |
+| -------- | ---------------------------- |
+| Headings | `## Summary`, `## Action Items` |
+| Bold     | `**key term**`               |
+| Italic   | `*emphasis*`                 |
+| Bullets  | `- action item`              |
+| Tables   | `\| Column \| Value \|`      |
+
+### Transcript
+
+The transcript remains plain text and is **not** Markdown-processed.
+
+### Copy behavior
+
+The **Copy Summary** button copies the raw Markdown text to the clipboard. Paste it into any Markdown-aware editor (e.g., Obsidian, VS Code, Notion) to retain formatting.
+
+### Security
+
+Raw HTML embedded in the AI response is HTML-encoded (escaped) by the Markdown renderer so it cannot execute in the WebView. JavaScript from the model output is never run.
 
 ---
 

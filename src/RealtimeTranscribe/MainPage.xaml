@@ -13,7 +13,6 @@
 
             <!-- Status label -->
             <Label
-                FontSize="14"
                 HorizontalOptions="Center"
                 Text="{Binding StatusMessage}"
                 TextColor="{StaticResource Secondary}" />
@@ -35,10 +34,32 @@
                 Text="✕  Cancel"
                 Style="{StaticResource SecondaryButton}" />
 
+            <!-- Font size controls -->
+            <HorizontalStackLayout
+                HorizontalOptions="End"
+                Spacing="8">
+                <Button
+                    Command="{Binding DecreaseFontSizeCommand}"
+                    Text="A−"
+                    FontSize="13"
+                    Padding="10,6"
+                    MinimumWidthRequest="44"
+                    Style="{StaticResource SecondaryButton}"
+                    ToolTipProperties.Text="Decrease text size" />
+                <Button
+                    Command="{Binding IncreaseFontSizeCommand}"
+                    Text="A+"
+                    FontSize="15"
+                    Padding="10,6"
+                    MinimumWidthRequest="44"
+                    Style="{StaticResource SecondaryButton}"
+                    ToolTipProperties.Text="Increase text size" />
+            </HorizontalStackLayout>
+
             <!-- Transcript section -->
             <Label
                 FontAttributes="Bold"
-                FontSize="16"
+                FontSize="{Binding HeadingFontSize}"
                 Text="Transcript" />
 
             <Border
@@ -47,6 +68,7 @@
                 StrokeShape="RoundRectangle 6">
                 <Editor
                     AutoSize="TextChanges"
+                    FontSize="{Binding ContentFontSize}"
                     IsReadOnly="True"
                     MinimumHeightRequest="120"
                     Placeholder="Transcript will appear here after recording…"
@@ -62,19 +84,22 @@
             <!-- Summary section -->
             <Label
                 FontAttributes="Bold"
-                FontSize="16"
+                FontSize="{Binding HeadingFontSize}"
                 Text="Summary &amp; Action Items" />
 
             <Border
                 Stroke="{StaticResource Gray300}"
                 StrokeThickness="1"
                 StrokeShape="RoundRectangle 6">
-                <Editor
-                    AutoSize="TextChanges"
-                    IsReadOnly="True"
+                <WebView
+                    x:Name="SummaryWebView"
+                    HeightRequest="120"
                     MinimumHeightRequest="120"
-                    Placeholder="Summary and action items will appear here…"
-                    Text="{Binding Summary}" />
+                    Navigated="OnSummaryWebViewNavigated">
+                    <WebView.Source>
+                        <HtmlWebViewSource Html="{Binding SummaryHtml}" />
+                    </WebView.Source>
+                </WebView>
             </Border>
 
             <Button

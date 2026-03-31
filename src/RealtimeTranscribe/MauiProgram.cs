@@ -51,6 +51,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<IAudioManager>(AudioManager.Current);
         builder.Services.AddSingleton<ITranscriptionService, TranscriptionService>();
         builder.Services.AddSingleton<ITranscriptionScheduler, TranscriptionScheduler>();
+        builder.Services.AddSingleton<IMarkdownProcessor, MarkdownProcessor>();
 
         // ------------------------------------------------------------------
         // ViewModels

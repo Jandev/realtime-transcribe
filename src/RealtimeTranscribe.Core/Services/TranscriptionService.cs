@@ -39,9 +39,11 @@ public class TranscriptionService : ITranscriptionService
         "You are an assistant that analyses meeting transcripts. " +
         "The transcript may be in Dutch or English. " +
         "Respond in the same language as the transcript. " +
+        "Format your entire response using Markdown. " +
         "Always respond with: " +
-        "1. A concise summary of no more than three sentences. " +
-        "2. A bullet-point list of action items / tasks identified in the meeting.";
+        "1. A '## Summary' heading followed by a concise summary of no more than three sentences. " +
+        "2. A '## Action Items' heading followed by a bullet-point list of action items / tasks identified in the meeting. " +
+        "Use **bold** for key terms and *italic* for emphasis where appropriate.";
 
     public TranscriptionService(AzureOpenAISettings settings)
     {
