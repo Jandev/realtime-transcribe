@@ -63,14 +63,14 @@ public partial class MainViewModel : ObservableObject
             ? WrapHtml("<p style=\"color: #9a9a9a; font-style: italic;\">Summary and action items will appear here…</p>")
             : WrapHtml(_markdownProcessor.ToHtml(Summary));
 
-    private static string WrapHtml(string bodyContent) => $"""
+    private static string WrapHtml(string bodyContent) => $$"""
         <!DOCTYPE html>
         <html>
         <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
             <style>
-                body {{
+                body {
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
                     font-size: 14px;
                     line-height: 1.6;
@@ -78,22 +78,22 @@ public partial class MainViewModel : ObservableObject
                     padding: 8px 12px;
                     color: #1a1a1a;
                     background: transparent;
-                }}
-                h1, h2, h3, h4 {{ margin-top: 12px; margin-bottom: 4px; }}
-                ul, ol {{ padding-left: 20px; margin: 4px 0; }}
-                li {{ margin: 2px 0; }}
-                table {{ border-collapse: collapse; width: 100%; margin: 8px 0; }}
-                th, td {{ border: 1px solid #ccc; padding: 4px 8px; text-align: left; }}
-                th {{ background: #f5f5f5; font-weight: 600; }}
-                p {{ margin: 4px 0; }}
-                @media (prefers-color-scheme: dark) {{
-                    body {{ color: #e0e0e0; }}
-                    th {{ background: #2d2d2d; }}
-                    th, td {{ border-color: #555; }}
-                }}
+                }
+                h1, h2, h3, h4 { margin-top: 12px; margin-bottom: 4px; }
+                ul, ol { padding-left: 20px; margin: 4px 0; }
+                li { margin: 2px 0; }
+                table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+                th, td { border: 1px solid #ccc; padding: 4px 8px; text-align: left; }
+                th { background: #f5f5f5; font-weight: 600; }
+                p { margin: 4px 0; }
+                @media (prefers-color-scheme: dark) {
+                    body { color: #e0e0e0; }
+                    th { background: #2d2d2d; }
+                    th, td { border-color: #555; }
+                }
             </style>
         </head>
-        <body>{bodyContent}</body>
+        <body>{{bodyContent}}</body>
         </html>
         """;
 
