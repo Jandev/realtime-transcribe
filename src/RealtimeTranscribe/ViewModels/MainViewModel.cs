@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using RealtimeTranscribe.Services;
+using System.Text;
 
 namespace RealtimeTranscribe.ViewModels;
 
@@ -205,6 +206,9 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
+    // Delay (ms) between each character when animating new transcript text into the UI.
+    private const int TranscriptAnimationDelayMs = 20;
+
     private async Task RunSchedulerAsync(CancellationToken cancellationToken)
     {
         await _transcriptionScheduler.RunAsync(
@@ -212,15 +216,50 @@ public partial class MainViewModel : ObservableObject
             onSegment: async segment =>
             {
                 _transcriptSegments.Add(segment);
-                var combined = string.Join(" ", _transcriptSegments);
+
+                await AppendToTranscriptAsync(segment, cancellationToken);
 
                 await MainThread.InvokeOnMainThreadAsync(() =>
-                {
-                    Transcript = combined;
-                    StatusMessage = $"🔴 Recording… (updated {DateTime.Now:HH:mm:ss})";
-                });
+                    StatusMessage = $"🔴 Recording… (updated {DateTime.Now:HH:mm:ss})");
             },
             cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
+    /// Appends <paramref name="segment"/> to <see cref="Transcript"/> one character at a time
+    /// to produce a visually fluent "streaming" effect.  Must be called from a background thread;
+    /// all UI updates are dispatched to the main thread.  Respects <paramref name="ct"/> on every
+    /// inter-character delay so cancellation stops the animation immediately.
+    /// </summary>
+    private async Task AppendToTranscriptAsync(string segment, CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(segment))
+            return;
+
+        await MainThread.InvokeOnMainThreadAsync(async () =>
+        {
+            var prefix = string.IsNullOrEmpty(Transcript) ? string.Empty : " ";
+            var textToAppend = prefix + segment;
+            var sb = new StringBuilder(Transcript);
+
+            foreach (char c in textToAppend)
+            {
+                if (ct.IsCancellationRequested)
+                    return;
+
+                sb.Append(c);
+                Transcript = sb.ToString();
+
+                try
+                {
+                    await Task.Delay(TranscriptAnimationDelayMs, ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+            }
+        });
     }
 
     private async Task StopAndProcessAsync()
@@ -265,7 +304,13 @@ public partial class MainViewModel : ObservableObject
             Transcript = string.Join(" ", _transcriptSegments);
 
             StatusMessage = "Summarising…";
-            Summary = await _transcriptionService.SummarizeAsync(Transcript, _cts.Token);
+            await _transcriptionService.SummarizeStreamingAsync(
+                Transcript,
+                onToken: async token =>
+                {
+                    await MainThread.InvokeOnMainThreadAsync(() => Summary += token);
+                },
+                _cts.Token);
 
             StatusMessage = "Done ✓";
         }

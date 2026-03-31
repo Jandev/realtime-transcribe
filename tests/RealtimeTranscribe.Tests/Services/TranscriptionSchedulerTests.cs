@@ -40,6 +40,9 @@ public class TranscriptionSchedulerTests
 
         public Task<string> SummarizeAsync(string transcript, CancellationToken cancellationToken = default)
             => Task.FromResult(string.Empty);
+
+        public Task SummarizeStreamingAsync(string transcript, Func<string, Task> onToken, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
     }
 
     // ---------------------------------------------------------------------------
@@ -256,6 +259,9 @@ public class TranscriptionSchedulerTests
 
         public Task<string> SummarizeAsync(string transcript, CancellationToken cancellationToken = default)
             => Task.FromResult(string.Empty);
+
+        public Task SummarizeStreamingAsync(string transcript, Func<string, Task> onToken, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
     }
 
     private sealed class SequentialTranscriptionService : ITranscriptionService
@@ -277,5 +283,8 @@ public class TranscriptionSchedulerTests
 
         public Task<string> SummarizeAsync(string transcript, CancellationToken cancellationToken = default)
             => Task.FromResult(string.Empty);
+
+        public Task SummarizeStreamingAsync(string transcript, Func<string, Task> onToken, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
     }
 }
