@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="RealtimeTranscribe.DevicesPage"
+    x:Name="DevicesPageRoot"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RealtimeTranscribe.ViewModels"
+    Title="Devices">
+
+    <ScrollView>
+        <VerticalStackLayout
+            Padding="24,16"
+            Spacing="20">
+
+            <!-- Refresh button -->
+            <Button
+                Command="{Binding RefreshDevicesCommand}"
+                HorizontalOptions="End"
+                Text="↺  Refresh"
+                Style="{StaticResource SecondaryButton}" />
+
+            <!-- Status message (e.g. "Input: Built-in Microphone") -->
+            <Label
+                HorizontalOptions="Center"
+                Text="{Binding StatusMessage}"
+                TextColor="{StaticResource Primary}" />
+
+            <!-- ── Input Devices ─────────────────────────────────────────── -->
+            <Label
+                FontAttributes="Bold"
+                FontSize="18"
+                Text="Input Devices" />
+
+            <Label
+                FontSize="13"
+                Text="Select the microphone or audio input source to record from."
+                TextColor="{StaticResource Gray500}" />
+
+            <Border
+                Stroke="{StaticResource Gray300}"
+                StrokeThickness="1"
+                StrokeShape="RoundRectangle 6">
+                <VerticalStackLayout BindableLayout.ItemsSource="{Binding InputDevices}">
+                    <BindableLayout.ItemTemplate>
+                        <DataTemplate x:DataType="vm:SelectableAudioDevice">
+                            <Grid
+                                ColumnDefinitions="28,*"
+                                Padding="12,10">
+                                <Grid.GestureRecognizers>
+                                    <TapGestureRecognizer
+                                        Command="{Binding Source={x:Reference DevicesPageRoot}, Path=BindingContext.SelectInputDeviceCommand}"
+                                        CommandParameter="{Binding .}" />
+                                </Grid.GestureRecognizers>
+                                <Label
+                                    Grid.Column="0"
+                                    FontSize="16"
+                                    Text="✓"
+                                    TextColor="{StaticResource Primary}"
+                                    VerticalOptions="Center"
+                                    HorizontalOptions="Center"
+                                    IsVisible="{Binding IsSelected}" />
+                                <Label
+                                    Grid.Column="1"
+                                    FontSize="15"
+                                    Text="{Binding Device.Name}"
+                                    VerticalOptions="Center" />
+                            </Grid>
+                        </DataTemplate>
+                    </BindableLayout.ItemTemplate>
+                    <Label
+                        Margin="12"
+                        FontSize="14"
+                        IsVisible="{Binding Source={x:Reference DevicesPageRoot}, Path=BindingContext.HasNoInputDevices}"
+                        Text="No input devices found. Tap Refresh to scan again."
+                        TextColor="{StaticResource Gray500}" />
+                </VerticalStackLayout>
+            </Border>
+
+            <!-- ── Output Devices ────────────────────────────────────────── -->
+            <Label
+                FontAttributes="Bold"
+                FontSize="18"
+                Text="Output Devices" />
+
+            <Label
+                FontSize="13"
+                Text="The currently active audio output. To record system audio, configure a loopback device (e.g. BlackHole) in macOS Audio MIDI Setup."
+                TextColor="{StaticResource Gray500}" />
+
+            <Border
+                Stroke="{StaticResource Gray300}"
+                StrokeThickness="1"
+                StrokeShape="RoundRectangle 6">
+                <VerticalStackLayout BindableLayout.ItemsSource="{Binding OutputDevices}">
+                    <BindableLayout.ItemTemplate>
+                        <DataTemplate x:DataType="vm:SelectableAudioDevice">
+                            <Grid
+                                ColumnDefinitions="28,*"
+                                Padding="12,10">
+                                <Grid.GestureRecognizers>
+                                    <TapGestureRecognizer
+                                        Command="{Binding Source={x:Reference DevicesPageRoot}, Path=BindingContext.SelectOutputDeviceCommand}"
+                                        CommandParameter="{Binding .}" />
+                                </Grid.GestureRecognizers>
+                                <Label
+                                    Grid.Column="0"
+                                    FontSize="16"
+                                    Text="✓"
+                                    TextColor="{StaticResource Primary}"
+                                    VerticalOptions="Center"
+                                    HorizontalOptions="Center"
+                                    IsVisible="{Binding IsSelected}" />
+                                <Label
+                                    Grid.Column="1"
+                                    FontSize="15"
+                                    Text="{Binding Device.Name}"
+                                    VerticalOptions="Center" />
+                            </Grid>
+                        </DataTemplate>
+                    </BindableLayout.ItemTemplate>
+                    <Label
+                        Margin="12"
+                        FontSize="14"
+                        IsVisible="{Binding Source={x:Reference DevicesPageRoot}, Path=BindingContext.HasNoOutputDevices}"
+                        Text="No output devices found. Tap Refresh to scan again."
+                        TextColor="{StaticResource Gray500}" />
+                </VerticalStackLayout>
+            </Border>
+
+        </VerticalStackLayout>
+    </ScrollView>
+
+</ContentPage>
