@@ -40,10 +40,8 @@
                 Stroke="{StaticResource Gray300}"
                 StrokeThickness="1"
                 StrokeShape="RoundRectangle 6">
-                <CollectionView
-                    ItemsSource="{Binding InputDevices}"
-                    SelectionMode="None">
-                    <CollectionView.ItemTemplate>
+                <VerticalStackLayout BindableLayout.ItemsSource="{Binding InputDevices}">
+                    <BindableLayout.ItemTemplate>
                         <DataTemplate x:DataType="vm:SelectableAudioDevice">
                             <Grid
                                 ColumnDefinitions="28,*"
@@ -68,15 +66,14 @@
                                     VerticalOptions="Center" />
                             </Grid>
                         </DataTemplate>
-                    </CollectionView.ItemTemplate>
-                    <CollectionView.EmptyView>
-                        <Label
-                            Margin="12"
-                            FontSize="14"
-                            Text="No input devices found. Tap Refresh to scan again."
-                            TextColor="{StaticResource Gray500}" />
-                    </CollectionView.EmptyView>
-                </CollectionView>
+                    </BindableLayout.ItemTemplate>
+                    <Label
+                        Margin="12"
+                        FontSize="14"
+                        IsVisible="{Binding Source={x:Reference DevicesPageRoot}, Path=BindingContext.HasNoInputDevices}"
+                        Text="No input devices found. Tap Refresh to scan again."
+                        TextColor="{StaticResource Gray500}" />
+                </VerticalStackLayout>
             </Border>
 
             <!-- ── Output Devices ────────────────────────────────────────── -->
@@ -94,10 +91,8 @@
                 Stroke="{StaticResource Gray300}"
                 StrokeThickness="1"
                 StrokeShape="RoundRectangle 6">
-                <CollectionView
-                    ItemsSource="{Binding OutputDevices}"
-                    SelectionMode="None">
-                    <CollectionView.ItemTemplate>
+                <VerticalStackLayout BindableLayout.ItemsSource="{Binding OutputDevices}">
+                    <BindableLayout.ItemTemplate>
                         <DataTemplate x:DataType="vm:SelectableAudioDevice">
                             <Grid
                                 ColumnDefinitions="28,*"
@@ -122,15 +117,14 @@
                                     VerticalOptions="Center" />
                             </Grid>
                         </DataTemplate>
-                    </CollectionView.ItemTemplate>
-                    <CollectionView.EmptyView>
-                        <Label
-                            Margin="12"
-                            FontSize="14"
-                            Text="No output devices found. Tap Refresh to scan again."
-                            TextColor="{StaticResource Gray500}" />
-                    </CollectionView.EmptyView>
-                </CollectionView>
+                    </BindableLayout.ItemTemplate>
+                    <Label
+                        Margin="12"
+                        FontSize="14"
+                        IsVisible="{Binding Source={x:Reference DevicesPageRoot}, Path=BindingContext.HasNoOutputDevices}"
+                        Text="No output devices found. Tap Refresh to scan again."
+                        TextColor="{StaticResource Gray500}" />
+                </VerticalStackLayout>
             </Border>
 
         </VerticalStackLayout>

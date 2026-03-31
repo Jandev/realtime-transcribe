@@ -41,13 +41,18 @@ public partial class DevicesViewModel : ObservableObject
     private readonly IAudioService _audioService;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasNoInputDevices))]
     private ObservableCollection<SelectableAudioDevice> _inputDevices = [];
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasNoOutputDevices))]
     private ObservableCollection<SelectableAudioDevice> _outputDevices = [];
 
     [ObservableProperty]
     private string _statusMessage = string.Empty;
+
+    public bool HasNoInputDevices  => InputDevices.Count  == 0;
+    public bool HasNoOutputDevices => OutputDevices.Count == 0;
 
     public DevicesViewModel(IAudioService audioService)
     {

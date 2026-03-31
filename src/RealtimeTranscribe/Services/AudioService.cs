@@ -64,10 +64,16 @@ public sealed class AudioService : IAudioService, IDisposable
 
     public IReadOnlyList<AudioDevice> GetInputDevices()
     {
-#if MACCATALYST
-        return GetCoreAudioDevices(inputScope: true);
-#elif IOS
+#if MACCATALYST || IOS
+        // Set the session category to PlayAndRecord so that AVAudioSession exposes the
+        // full set of available input ports: built-in mic, aggregated/virtual devices
+        // (e.g. BlackHole, multi-output), Bluetooth, and iPhone via Continuity.
+        // Without this, only the currently-active port is returned.
         var session = AVAudioSession.SharedInstance();
+        session.SetCategory(AVAudioSessionCategory.PlayAndRecord,
+            AVAudioSessionCategoryOptions.AllowBluetooth | AVAudioSessionCategoryOptions.AllowBluetoothA2DP,
+            out _);
+        session.SetActive(true, out _);
         var inputs = session.AvailableInputs;
         if (inputs is { Length: > 0 })
             return inputs.Select(p => new AudioDevice($"{p.PortType}:{p.PortName}", p.PortName)).ToArray();
@@ -193,18 +199,9 @@ public sealed class AudioService : IAudioService, IDisposable
             return;
 
         var session = AVAudioSession.SharedInstance();
-#if MACCATALYST
-        // On macOS Catalyst, devices are identified by their CoreAudio UID. Resolve the
-        // human-readable name and match it against the entries in AvailableInputs, since
-        // AVAudioSessionPortDescription does not expose the CoreAudio UID directly.
-        var deviceName = GetInputDevices().FirstOrDefault(d => d.Id == _selectedInputDeviceId)?.Name;
-        var preferred = deviceName is not null
-            ? session.AvailableInputs?.FirstOrDefault(p => p.PortName == deviceName)
-            : null;
-#else
         var preferred = session.AvailableInputs?
             .FirstOrDefault(p => $"{p.PortType}:{p.PortName}" == _selectedInputDeviceId);
-#endif
+
         if (preferred is not null)
             session.SetPreferredInput(preferred, out _);
 #endif
@@ -239,6 +236,9 @@ public sealed class AudioService : IAudioService, IDisposable
     }
 
     private const uint kAudioObjectSystemObject        = 1;
+    // Property selectors, scopes, and elements use four-character codes (FourCC) as
+    // per the CoreAudio HAL API convention. Each uint value encodes four ASCII bytes,
+    // shown in the adjacent comment, e.g. 0x64657623 == 'dev#'.
     private const uint kAudioHardwarePropertyDevices   = 0x64657623u; // 'dev#'
     private const uint kAudioDevicePropertyStreams     = 0x73746D23u; // 'stm#'
     private const uint kAudioObjectPropertyName        = 0x6C6E616Du; // 'lnam'
