@@ -41,6 +41,9 @@ public class TranscriptionSchedulerTests
         public Task<string> SummarizeAsync(string transcript, CancellationToken cancellationToken = default)
             => Task.FromResult(string.Empty);
 
+        public Task<string> DiarizeAsync(string transcript, CancellationToken cancellationToken = default)
+            => Task.FromResult(string.Empty);
+
         public Task SummarizeStreamingAsync(string transcript, Func<string, Task> onToken, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
     }
@@ -260,6 +263,9 @@ public class TranscriptionSchedulerTests
         public Task<string> SummarizeAsync(string transcript, CancellationToken cancellationToken = default)
             => Task.FromResult(string.Empty);
 
+        public Task<string> DiarizeAsync(string transcript, CancellationToken cancellationToken = default)
+            => Task.FromResult(string.Empty);
+
         public Task SummarizeStreamingAsync(string transcript, Func<string, Task> onToken, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
     }
@@ -282,6 +288,9 @@ public class TranscriptionSchedulerTests
         }
 
         public Task<string> SummarizeAsync(string transcript, CancellationToken cancellationToken = default)
+            => Task.FromResult(string.Empty);
+
+        public Task<string> DiarizeAsync(string transcript, CancellationToken cancellationToken = default)
             => Task.FromResult(string.Empty);
 
         public Task SummarizeStreamingAsync(string transcript, Func<string, Task> onToken, CancellationToken cancellationToken = default)
