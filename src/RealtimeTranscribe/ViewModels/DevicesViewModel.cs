@@ -41,18 +41,13 @@ public partial class DevicesViewModel : ObservableObject
     private readonly IAudioService _audioService;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasNoInputDevices))]
     private ObservableCollection<SelectableAudioDevice> _inputDevices = [];
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasNoOutputDevices))]
     private ObservableCollection<SelectableAudioDevice> _outputDevices = [];
 
     [ObservableProperty]
     private string _statusMessage = string.Empty;
-
-    public bool HasNoInputDevices  => InputDevices.Count  == 0;
-    public bool HasNoOutputDevices => OutputDevices.Count == 0;
 
     public DevicesViewModel(IAudioService audioService)
     {
@@ -61,11 +56,16 @@ public partial class DevicesViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Refreshes both device lists from the platform audio session.
-    /// Useful when the user navigates to the page or explicitly taps "Refresh".
+    /// Requests microphone permission (shows the OS dialog the first time) and then
+    /// refreshes both device lists from the platform audio session.
+    /// Called automatically when the page appears and when the user taps "Refresh".
     /// </summary>
     [RelayCommand]
-    public void RefreshDevices() => LoadDevices();
+    public async Task RefreshDevices()
+    {
+        await Permissions.RequestAsync<Permissions.Microphone>();
+        LoadDevices();
+    }
 
     /// <summary>Selects <paramref name="device"/> as the active input device.</summary>
     [RelayCommand]

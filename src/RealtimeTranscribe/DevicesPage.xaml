@@ -47,6 +47,13 @@
                     MinimumHeightRequest="220"
                     MaximumHeightRequest="440">
                     <VerticalStackLayout BindableLayout.ItemsSource="{Binding InputDevices}">
+                        <BindableLayout.EmptyView>
+                            <Label
+                                Margin="16,12"
+                                FontSize="15"
+                                Text="No input devices found. Tap Refresh to scan again."
+                                TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray500}}" />
+                        </BindableLayout.EmptyView>
                         <BindableLayout.ItemTemplate>
                             <DataTemplate x:DataType="vm:SelectableAudioDevice">
                                 <Grid
@@ -76,12 +83,6 @@
                                 </Grid>
                             </DataTemplate>
                         </BindableLayout.ItemTemplate>
-                        <Label
-                            Margin="16,12"
-                            FontSize="15"
-                            IsVisible="{Binding Source={x:Reference DevicesPageRoot}, Path=BindingContext.HasNoInputDevices}"
-                            Text="No input devices found. Tap Refresh to scan again."
-                            TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray500}}" />
                     </VerticalStackLayout>
                 </ScrollView>
             </Border>
@@ -103,6 +104,13 @@
                     MinimumHeightRequest="220"
                     MaximumHeightRequest="440">
                     <VerticalStackLayout BindableLayout.ItemsSource="{Binding OutputDevices}">
+                        <BindableLayout.EmptyView>
+                            <Label
+                                Margin="16,12"
+                                FontSize="15"
+                                Text="No output devices found. Tap Refresh to scan again."
+                                TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray500}}" />
+                        </BindableLayout.EmptyView>
                         <BindableLayout.ItemTemplate>
                             <DataTemplate x:DataType="vm:SelectableAudioDevice">
                                 <Grid
@@ -130,12 +138,6 @@
                                 </Grid>
                             </DataTemplate>
                         </BindableLayout.ItemTemplate>
-                        <Label
-                            Margin="16,12"
-                            FontSize="15"
-                            IsVisible="{Binding Source={x:Reference DevicesPageRoot}, Path=BindingContext.HasNoOutputDevices}"
-                            Text="No output devices found. Tap Refresh to scan again."
-                            TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray500}}" />
                     </VerticalStackLayout>
                 </ScrollView>
             </Border>
