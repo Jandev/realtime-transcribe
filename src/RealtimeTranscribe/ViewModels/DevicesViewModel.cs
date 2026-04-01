@@ -3,6 +3,9 @@ using CommunityToolkit.Mvvm.Input;
 using RealtimeTranscribe.Models;
 using RealtimeTranscribe.Services;
 using System.Collections.ObjectModel;
+#if MACCATALYST
+using AVFoundation;
+#endif
 
 namespace RealtimeTranscribe.ViewModels;
 
@@ -63,7 +66,20 @@ public partial class DevicesViewModel : ObservableObject
     [RelayCommand]
     public async Task RefreshDevices()
     {
+#if MACCATALYST
+        // On macOS Catalyst, Permissions.RequestAsync<Microphone>() only sets the TCC record
+        // via AVCaptureDevice.RequestAccessForMediaType.  It does NOT activate AVAudioSession
+        // for recording, which means AVAudioSession.AvailableInputs remains null and CoreAudio
+        // HAL input-scope stream queries still return nothing in the same process session.
+        // AVAudioSession.RequestRecordPermission both requests the TCC microphone permission
+        // AND registers the intent with the audio daemon so that the session is recording-ready
+        // before GetInputDevices() is called.
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        AVAudioSession.SharedInstance().RequestRecordPermission(granted => tcs.TrySetResult(granted));
+        await tcs.Task;
+#else
         await Permissions.RequestAsync<Permissions.Microphone>();
+#endif
         LoadDevices();
     }
 
