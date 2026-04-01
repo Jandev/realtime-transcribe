@@ -4,7 +4,7 @@ A .NET MAUI macOS app that records meeting audio, transcribes it with **Azure AI
 
 Supports Dutch 🇳🇱 and English 🇬🇧 automatically (Whisper auto-detects language; the summary prompt responds in the same language).
 
-![Realtime Transcribe app showing a successful Dutch transcription and generated summary](docs/images/first-transcription-in-dutch-screenshot.png)
+![Realtime Transcribe app showing transcript, speaker-attributed transcript, and summary with action items](docs/images/app-screenshot.png)
 
 ---
 
