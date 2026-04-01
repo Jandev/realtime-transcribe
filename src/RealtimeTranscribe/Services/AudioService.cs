@@ -288,7 +288,7 @@ public sealed class AudioService : IAudioService, IDisposable
     private const uint kAudioObjectPropertyName            = 0x6C6E616Du; // 'lnam'
     private const uint kAudioDevicePropertyDeviceUID       = 0x75696420u; // 'uid '
     private const uint kAudioObjectPropertyScopeGlobal     = 0x676C6F62u; // 'glob'
-    private const uint kAudioDevicePropertyScopeInput      = 0x696E7075u; // 'inpu'
+    private const uint kAudioDevicePropertyScopeInput      = 0x696E7074u; // 'inpt'
     private const uint kAudioDevicePropertyScopeOutput     = 0x6F757470u; // 'outp'
     private const uint kAudioObjectPropertyElementMain     = 0;
 
