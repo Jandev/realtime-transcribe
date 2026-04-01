@@ -7,7 +7,7 @@ namespace RealtimeTranscribe.Services;
 public static class TextScaleService
 {
     /// <summary>Default content font size in device-independent units.</summary>
-    public const double Default = 15.0;
+    public const double Default = 13.0;
 
     /// <summary>Smallest allowed content font size.</summary>
     public const double Minimum = 10.0;

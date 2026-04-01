@@ -47,16 +47,13 @@
                 Margin="4,0,0,6" />
 
             <Border Margin="0,0,0,4">
-                <VerticalStackLayout>
-                    <Editor
-                        AutoSize="TextChanges"
-                        FontSize="{Binding ContentFontSize}"
-                        IsReadOnly="True"
-                        Margin="4,4"
-                        MinimumHeightRequest="100"
-                        Placeholder="Transcript will appear here after recording…"
-                        Text="{Binding Transcript}" />
-                </VerticalStackLayout>
+                <Editor
+                    FontSize="{Binding ContentFontSize}"
+                    IsReadOnly="True"
+                    Margin="4,4"
+                    HeightRequest="150"
+                    Placeholder="Transcript will appear here after recording…"
+                    Text="{Binding Transcript}" />
             </Border>
 
             <!-- Transcript actions row -->
@@ -96,11 +93,10 @@
 
             <Border Margin="0,0,0,4">
                 <Editor
-                    AutoSize="TextChanges"
                     FontSize="{Binding ContentFontSize}"
                     IsReadOnly="True"
                     Margin="4,4"
-                    MinimumHeightRequest="100"
+                    HeightRequest="150"
                     Placeholder="Speaker-attributed transcript will appear here after recording…"
                     Text="{Binding DiarizedTranscript}" />
             </Border>
