@@ -18,8 +18,10 @@ public interface IAudioService
 
     /// <summary>
     /// Raised when the user changes the selected input or output device.
-    /// Subscribers (e.g. <c>MainViewModel</c>) should stop and restart any in-progress
-    /// recording so the new device takes effect immediately.
+    /// Subscribers (e.g. <c>MainViewModel</c>) stop any in-progress recording, apply the
+    /// new device (buffering any audio that was captured so far into the transcript), and
+    /// immediately restart recording on the newly-selected device so the session continues
+    /// without clearing the transcript.
     /// </summary>
     event EventHandler? DeviceSelectionChanged;
 

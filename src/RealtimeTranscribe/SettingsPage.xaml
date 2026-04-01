@@ -104,6 +104,23 @@
                 Text="Settings are stored securely on this device."
                 TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray500}}" />
 
+            <Label
+                FontAttributes="Bold"
+                FontSize="20"
+                Text="File Storage" />
+
+            <Label Text="Output Folder" />
+            <HorizontalStackLayout Spacing="8">
+                <Entry
+                    HorizontalOptions="FillAndExpand"
+                    IsReadOnly="True"
+                    Placeholder="No folder selected — summaries will not be saved"
+                    Text="{Binding OutputFolder}" />
+                <Button
+                    Command="{Binding BrowseOutputFolderCommand}"
+                    Text="Browse…" />
+            </HorizontalStackLayout>
+
             <!-- ── Save button ────────────────────────────────────────── -->
             <Button
                 Command="{Binding SaveCommand}"

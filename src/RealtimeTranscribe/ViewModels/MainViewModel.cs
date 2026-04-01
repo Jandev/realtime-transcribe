@@ -15,6 +15,7 @@ public partial class MainViewModel : ObservableObject
     private readonly ITranscriptionService _transcriptionService;
     private readonly ITranscriptionScheduler _transcriptionScheduler;
     private readonly IMarkdownProcessor _markdownProcessor;
+    private readonly IFileStorageService _fileStorageService;
 
     private CancellationTokenSource? _cts;
     private CancellationTokenSource? _schedulerCts;
@@ -27,12 +28,14 @@ public partial class MainViewModel : ObservableObject
         IAudioService audioService,
         ITranscriptionService transcriptionService,
         ITranscriptionScheduler transcriptionScheduler,
-        IMarkdownProcessor markdownProcessor)
+        IMarkdownProcessor markdownProcessor,
+        IFileStorageService fileStorageService)
     {
         _audioService = audioService;
         _transcriptionService = transcriptionService;
         _transcriptionScheduler = transcriptionScheduler;
         _markdownProcessor = markdownProcessor;
+        _fileStorageService = fileStorageService;
 
         // React when a Bluetooth / wireless input device disconnects mid-recording.
         _audioService.RecordingInterrupted += OnRecordingInterrupted;
@@ -445,6 +448,9 @@ public partial class MainViewModel : ObservableObject
                     await MainThread.InvokeOnMainThreadAsync(() => Summary += token);
                 },
                 _cts.Token);
+
+            if (!string.IsNullOrEmpty(Summary))
+                await _fileStorageService.SaveSummaryAsync(Summary, DateTime.Now, _cts.Token);
 
             StatusMessage = "Done ✓";
         }
