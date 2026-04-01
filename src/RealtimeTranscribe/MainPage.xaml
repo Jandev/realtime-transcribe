@@ -4,44 +4,71 @@
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:vm="clr-namespace:RealtimeTranscribe.ViewModels"
-    Title="Realtime Transcribe">
+    Title="Transcribe">
 
     <ScrollView>
         <VerticalStackLayout
-            Padding="24,16"
-            Spacing="16">
+            Padding="20,16"
+            Spacing="0">
 
-            <!-- Status label -->
+            <!-- ── Status ─────────────────────────────────────────────── -->
             <Label
                 HorizontalOptions="Center"
+                Margin="0,0,0,16"
+                FontSize="13"
                 Text="{Binding StatusMessage}"
-                TextColor="{StaticResource Secondary}" />
+                TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray500}}" />
 
-            <!-- Record / Stop button -->
+            <!-- ── Record / Stop button ───────────────────────────────── -->
             <Button
                 Command="{Binding ToggleRecordingCommand}"
-                FontSize="18"
-                HeightRequest="60"
+                FontSize="17"
+                FontAttributes="Bold"
+                HeightRequest="50"
                 HorizontalOptions="Fill"
+                Margin="0,0,0,12"
+                CornerRadius="10"
                 Text="{Binding RecordButtonText}"
                 BackgroundColor="{Binding IsRecording, Converter={StaticResource BoolToRecordColorConverter}}" />
 
-            <!-- Cancel button (visible while processing) -->
+            <!-- ── Cancel button (visible while processing) ───────────── -->
             <Button
                 Command="{Binding CancelCommand}"
                 HorizontalOptions="Fill"
+                Margin="0,0,0,20"
                 IsVisible="{Binding IsProcessing}"
-                Text="✕  Cancel"
+                Text="Cancel"
                 Style="{StaticResource SecondaryButton}" />
 
-            <!-- Font size controls -->
+            <!-- ── Transcript ─────────────────────────────────────────── -->
+            <Label
+                Style="{StaticResource SectionHeader}"
+                Text="TRANSCRIPT"
+                Margin="4,0,0,6" />
+
+            <Border Margin="0,0,0,4">
+                <VerticalStackLayout>
+                    <Editor
+                        AutoSize="TextChanges"
+                        FontSize="{Binding ContentFontSize}"
+                        IsReadOnly="True"
+                        Margin="4,4"
+                        MinimumHeightRequest="100"
+                        Placeholder="Transcript will appear here after recording…"
+                        Text="{Binding Transcript}" />
+                </VerticalStackLayout>
+            </Border>
+
+            <!-- Transcript actions row -->
             <HorizontalStackLayout
+                Margin="0,0,0,20"
                 HorizontalOptions="End"
                 Spacing="8">
                 <Button
                     Command="{Binding DecreaseFontSizeCommand}"
                     Text="A−"
                     FontSize="13"
+                    FontAttributes="None"
                     Padding="10,6"
                     MinimumWidthRequest="44"
                     Style="{StaticResource SecondaryButton}"
@@ -50,72 +77,50 @@
                     Command="{Binding IncreaseFontSizeCommand}"
                     Text="A+"
                     FontSize="15"
+                    FontAttributes="None"
                     Padding="10,6"
                     MinimumWidthRequest="44"
                     Style="{StaticResource SecondaryButton}"
                     ToolTipProperties.Text="Increase text size" />
+                <Button
+                    Command="{Binding CopyTranscriptCommand}"
+                    Text="Copy"
+                    Style="{StaticResource SecondaryButton}" />
             </HorizontalStackLayout>
 
-            <!-- Transcript section -->
+            <!-- ── Speaker-Attributed Transcript ─────────────────────── -->
             <Label
-                FontAttributes="Bold"
-                FontSize="{Binding HeadingFontSize}"
-                Text="Transcript" />
+                Style="{StaticResource SectionHeader}"
+                Text="SPEAKER-ATTRIBUTED TRANSCRIPT"
+                Margin="4,0,0,6" />
 
-            <Border
-                Stroke="{StaticResource Gray300}"
-                StrokeThickness="1"
-                StrokeShape="RoundRectangle 6">
+            <Border Margin="0,0,0,4">
                 <Editor
                     AutoSize="TextChanges"
                     FontSize="{Binding ContentFontSize}"
                     IsReadOnly="True"
-                    MinimumHeightRequest="120"
-                    Placeholder="Transcript will appear here after recording…"
-                    Text="{Binding Transcript}" />
-            </Border>
-
-            <Button
-                Command="{Binding CopyTranscriptCommand}"
-                HorizontalOptions="End"
-                Text="📋  Copy Transcript"
-                Style="{StaticResource SecondaryButton}" />
-
-            <!-- Speaker-Attributed Transcript section -->
-            <Label
-                FontAttributes="Bold"
-                FontSize="{Binding HeadingFontSize}"
-                Text="Speaker-Attributed Transcript" />
-
-            <Border
-                Stroke="{StaticResource Gray300}"
-                StrokeThickness="1"
-                StrokeShape="RoundRectangle 6">
-                <Editor
-                    AutoSize="TextChanges"
-                    FontSize="{Binding ContentFontSize}"
-                    IsReadOnly="True"
-                    MinimumHeightRequest="120"
+                    Margin="4,4"
+                    MinimumHeightRequest="100"
                     Placeholder="Speaker-attributed transcript will appear here after recording…"
                     Text="{Binding DiarizedTranscript}" />
             </Border>
 
-            <Button
-                Command="{Binding CopyDiarizedTranscriptCommand}"
-                HorizontalOptions="End"
-                Text="📋  Copy Speaker Transcript"
-                Style="{StaticResource SecondaryButton}" />
+            <HorizontalStackLayout
+                Margin="0,0,0,20"
+                HorizontalOptions="End">
+                <Button
+                    Command="{Binding CopyDiarizedTranscriptCommand}"
+                    Text="Copy"
+                    Style="{StaticResource SecondaryButton}" />
+            </HorizontalStackLayout>
 
-            <!-- Summary section -->
+            <!-- ── Summary &amp; Action Items ─────────────────────────── -->
             <Label
-                FontAttributes="Bold"
-                FontSize="{Binding HeadingFontSize}"
-                Text="Summary &amp; Action Items" />
+                Style="{StaticResource SectionHeader}"
+                Text="SUMMARY &amp; ACTION ITEMS"
+                Margin="4,0,0,6" />
 
-            <Border
-                Stroke="{StaticResource Gray300}"
-                StrokeThickness="1"
-                StrokeShape="RoundRectangle 6">
+            <Border Margin="0,0,0,4">
                 <WebView
                     x:Name="SummaryWebView"
                     HeightRequest="120"
@@ -127,11 +132,14 @@
                 </WebView>
             </Border>
 
-            <Button
-                Command="{Binding CopySummaryCommand}"
-                HorizontalOptions="End"
-                Text="📋  Copy Summary"
-                Style="{StaticResource SecondaryButton}" />
+            <HorizontalStackLayout
+                Margin="0,0,0,32"
+                HorizontalOptions="End">
+                <Button
+                    Command="{Binding CopySummaryCommand}"
+                    Text="Copy"
+                    Style="{StaticResource SecondaryButton}" />
+            </HorizontalStackLayout>
 
         </VerticalStackLayout>
     </ScrollView>

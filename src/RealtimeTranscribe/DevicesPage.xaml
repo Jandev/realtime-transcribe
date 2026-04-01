@@ -9,94 +9,99 @@
 
     <ScrollView>
         <VerticalStackLayout
-            Padding="24,16"
-            Spacing="20">
+            Padding="20,16"
+            Spacing="0">
 
-            <!-- Refresh button -->
-            <Button
-                Command="{Binding RefreshDevicesCommand}"
+            <!-- ── Refresh ────────────────────────────────────────────── -->
+            <HorizontalStackLayout
                 HorizontalOptions="End"
-                Text="↺  Refresh"
-                Style="{StaticResource SecondaryButton}" />
+                Margin="0,0,0,16">
+                <Button
+                    Command="{Binding RefreshDevicesCommand}"
+                    Text="Refresh"
+                    Style="{StaticResource SecondaryButton}" />
+            </HorizontalStackLayout>
 
             <!-- Status message (e.g. "Input: Built-in Microphone") -->
             <Label
                 HorizontalOptions="Center"
+                Margin="0,0,0,24"
+                FontSize="13"
                 Text="{Binding StatusMessage}"
-                TextColor="{StaticResource Primary}" />
+                TextColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}" />
 
-            <!-- ── Input Devices ─────────────────────────────────────────── -->
+            <!-- ── Input Devices ──────────────────────────────────────── -->
             <Label
-                FontAttributes="Bold"
-                FontSize="18"
-                Text="Input Devices" />
+                Style="{StaticResource SectionHeader}"
+                Text="INPUT DEVICES"
+                Margin="4,0,0,6" />
 
             <Label
                 FontSize="13"
+                Margin="4,0,0,8"
                 Text="Select the microphone or audio input source to record from."
-                TextColor="{StaticResource Gray500}" />
+                TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray500}}" />
 
-            <Border
-                Stroke="{StaticResource Gray300}"
-                StrokeThickness="1"
-                StrokeShape="RoundRectangle 6">
+            <Border Margin="0,0,0,24">
                 <VerticalStackLayout BindableLayout.ItemsSource="{Binding InputDevices}">
                     <BindableLayout.ItemTemplate>
                         <DataTemplate x:DataType="vm:SelectableAudioDevice">
                             <Grid
-                                ColumnDefinitions="28,*"
-                                Padding="12,10">
+                                ColumnDefinitions="32,*"
+                                Padding="16,12"
+                                MinimumHeightRequest="44">
                                 <Grid.GestureRecognizers>
                                     <TapGestureRecognizer
                                         Command="{Binding Source={x:Reference DevicesPageRoot}, Path=BindingContext.SelectInputDeviceCommand}"
                                         CommandParameter="{Binding .}" />
                                 </Grid.GestureRecognizers>
+                                <!-- Checkmark (selected indicator) -->
                                 <Label
                                     Grid.Column="0"
-                                    FontSize="16"
+                                    FontSize="17"
                                     Text="✓"
-                                    TextColor="{StaticResource Primary}"
+                                    TextColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
                                     VerticalOptions="Center"
                                     HorizontalOptions="Center"
                                     IsVisible="{Binding IsSelected}" />
+                                <!-- Device name -->
                                 <Label
                                     Grid.Column="1"
-                                    FontSize="15"
+                                    FontSize="17"
                                     Text="{Binding Device.Name}"
                                     VerticalOptions="Center" />
                             </Grid>
                         </DataTemplate>
                     </BindableLayout.ItemTemplate>
                     <Label
-                        Margin="12"
-                        FontSize="14"
+                        Margin="16,12"
+                        FontSize="15"
                         IsVisible="{Binding Source={x:Reference DevicesPageRoot}, Path=BindingContext.HasNoInputDevices}"
                         Text="No input devices found. Tap Refresh to scan again."
-                        TextColor="{StaticResource Gray500}" />
+                        TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray500}}" />
                 </VerticalStackLayout>
             </Border>
 
-            <!-- ── Output Devices ────────────────────────────────────────── -->
+            <!-- ── Output Devices ─────────────────────────────────────── -->
             <Label
-                FontAttributes="Bold"
-                FontSize="18"
-                Text="Output Devices" />
+                Style="{StaticResource SectionHeader}"
+                Text="OUTPUT DEVICES"
+                Margin="4,0,0,6" />
 
             <Label
                 FontSize="13"
+                Margin="4,0,0,8"
                 Text="The currently active audio output. To record system audio, configure a loopback device (e.g. BlackHole) in macOS Audio MIDI Setup."
-                TextColor="{StaticResource Gray500}" />
+                TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray500}}" />
 
-            <Border
-                Stroke="{StaticResource Gray300}"
-                StrokeThickness="1"
-                StrokeShape="RoundRectangle 6">
+            <Border Margin="0,0,0,32">
                 <VerticalStackLayout BindableLayout.ItemsSource="{Binding OutputDevices}">
                     <BindableLayout.ItemTemplate>
                         <DataTemplate x:DataType="vm:SelectableAudioDevice">
                             <Grid
-                                ColumnDefinitions="28,*"
-                                Padding="12,10">
+                                ColumnDefinitions="32,*"
+                                Padding="16,12"
+                                MinimumHeightRequest="44">
                                 <Grid.GestureRecognizers>
                                     <TapGestureRecognizer
                                         Command="{Binding Source={x:Reference DevicesPageRoot}, Path=BindingContext.SelectOutputDeviceCommand}"
@@ -104,26 +109,26 @@
                                 </Grid.GestureRecognizers>
                                 <Label
                                     Grid.Column="0"
-                                    FontSize="16"
+                                    FontSize="17"
                                     Text="✓"
-                                    TextColor="{StaticResource Primary}"
+                                    TextColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
                                     VerticalOptions="Center"
                                     HorizontalOptions="Center"
                                     IsVisible="{Binding IsSelected}" />
                                 <Label
                                     Grid.Column="1"
-                                    FontSize="15"
+                                    FontSize="17"
                                     Text="{Binding Device.Name}"
                                     VerticalOptions="Center" />
                             </Grid>
                         </DataTemplate>
                     </BindableLayout.ItemTemplate>
                     <Label
-                        Margin="12"
-                        FontSize="14"
+                        Margin="16,12"
+                        FontSize="15"
                         IsVisible="{Binding Source={x:Reference DevicesPageRoot}, Path=BindingContext.HasNoOutputDevices}"
                         Text="No output devices found. Tap Refresh to scan again."
-                        TextColor="{StaticResource Gray500}" />
+                        TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray500}}" />
                 </VerticalStackLayout>
             </Border>
 
