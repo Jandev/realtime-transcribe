@@ -48,6 +48,7 @@
 
             <Border Margin="0,0,0,4">
                 <Editor
+                    x:Name="TranscriptEditor"
                     FontSize="{Binding ContentFontSize}"
                     IsReadOnly="True"
                     Margin="4,4"
@@ -93,6 +94,7 @@
 
             <Border Margin="0,0,0,4">
                 <Editor
+                    x:Name="DiarizedTranscriptEditor"
                     FontSize="{Binding ContentFontSize}"
                     IsReadOnly="True"
                     Margin="4,4"

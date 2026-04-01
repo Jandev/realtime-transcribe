@@ -7,17 +7,17 @@
     Shell.FlyoutBehavior="Disabled">
 
     <TabBar>
-        <Tab Title="Transcribe" Icon="microphone.svg">
+        <Tab Icon="microphone.svg">
             <ShellContent
                 ContentTemplate="{DataTemplate local:MainPage}"
                 Route="MainPage" />
         </Tab>
-        <Tab Title="Devices" Icon="speaker.svg">
+        <Tab Icon="speaker.svg">
             <ShellContent
                 ContentTemplate="{DataTemplate local:DevicesPage}"
                 Route="DevicesPage" />
         </Tab>
-        <Tab Title="Settings" Icon="settings.svg">
+        <Tab Icon="settings.svg">
             <ShellContent
                 ContentTemplate="{DataTemplate local:SettingsPage}"
                 Route="SettingsPage" />
