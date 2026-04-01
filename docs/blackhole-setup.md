@@ -31,7 +31,7 @@ A Multi-Output Device sends audio to multiple outputs at once — your speakers 
 3. In the device list on the right, check both **BlackHole 2ch** and your speakers / headphones.
 4. Double-click the device name and rename it (e.g. `Transcribe Output`).
 
-![Audio MIDI Setup showing Transcribe Output multi-output device with BlackHole 2ch checked](https://github.com/user-attachments/assets/c9e1ce1e-ae06-4683-84c8-2b6d1d68f0cd)
+![Audio MIDI Setup showing Transcribe Output multi-output device with BlackHole 2ch checked](images/blackhole-multi-output-device.png)
 
 ---
 
@@ -44,7 +44,7 @@ An Aggregate Input Device combines multiple inputs into one — BlackHole (which
 3. Set the **Clock Source** to **BlackHole 2ch**.
 4. Double-click the device name and rename it (e.g. `Transcribe Input`).
 
-![Audio MIDI Setup showing Transcribe Input aggregate device with BlackHole 2ch and microphones checked](https://github.com/user-attachments/assets/2bbabaa2-06c9-422e-bf99-b900fea79a56)
+![Audio MIDI Setup showing Transcribe Input aggregate device with BlackHole 2ch and microphones checked](images/blackhole-aggregate-input-device.png)
 
 ---
 
@@ -56,13 +56,13 @@ Set macOS to play audio through the Multi-Output Device so system audio is route
 
 Open **System Settings → Sound** and on the **Output** tab select **Transcribe Output**.
 
-![System Settings Sound Output tab with Transcribe Output selected](https://github.com/user-attachments/assets/c9adfaf7-e8e2-4ed5-905f-2c003e95d417)
+![System Settings Sound Output tab with Transcribe Output selected](images/sound-output-settings.png)
 
 ### Input
 
 On the **Input** tab select **Transcribe Input** so the app can capture both the microphone and system audio.
 
-![System Settings Sound Input tab with Transcribe Input selected](https://github.com/user-attachments/assets/c5c93626-6e5a-474d-9ff0-d1c57c0bb130)
+![System Settings Sound Input tab with Transcribe Input selected](images/sound-input-settings.png)
 
 ---
 
