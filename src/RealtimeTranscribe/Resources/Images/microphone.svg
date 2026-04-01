@@ -1,10 +1,3 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-    <!-- mic capsule body -->
-    <rect x="9" y="2" width="6" height="11" rx="3" fill="black"/>
-    <!-- curved stand approximated as a wide rounded band -->
-    <rect x="5" y="11" width="14" height="3" rx="1" fill="black"/>
-    <!-- vertical post -->
-    <rect x="11" y="14" width="2" height="6" fill="black"/>
-    <!-- base -->
-    <rect x="8" y="20" width="8" height="2" rx="1" fill="black"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <path fill="black" d="M12 1a4 4 0 0 0-4 4v6a4 4 0 0 0 8 0V5a4 4 0 0 0-4-4zm-6 9a1 1 0 0 0-1 1 7 7 0 0 0 6 6.92V20H9a1 1 0 0 0 0 2h6a1 1 0 0 0 0-2h-2v-2.08A7 7 0 0 0 19 11a1 1 0 0 0-2 0 5 5 0 0 1-10 0 1 1 0 0 0-1-1z"/>
 </svg>

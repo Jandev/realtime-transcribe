@@ -1,8 +1,3 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-    <!-- speaker cone -->
-    <polygon points="3,9 3,15 7,15 12,19 12,5 7,9" fill="black"/>
-    <!-- inner sound wave -->
-    <rect x="14" y="8" width="2" height="8" rx="1" fill="black"/>
-    <!-- outer sound wave -->
-    <rect x="17" y="5" width="2" height="14" rx="1" fill="black"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <path fill="black" d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>
 </svg>
