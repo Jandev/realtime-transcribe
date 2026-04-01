@@ -78,7 +78,20 @@ public sealed class AudioService : IAudioService, IDisposable
         // Use the CoreAudio HAL (not AVAudioSession.AvailableInputs) because AvailableInputs
         // only returns the currently-active port and omits virtual/aggregate drivers such as
         // BlackHole.  The HAL is the authoritative source for ALL devices.
-        return GetCoreAudioDevices(inputScope: true);
+        var coreAudioDevices = GetCoreAudioDevices(inputScope: true);
+        if (coreAudioDevices.Count > 0)
+            return coreAudioDevices;
+
+        // Fallback: the CoreAudio HAL can return nothing immediately after the user grants
+        // microphone permission via the TCC dialog (the new grant has not yet propagated into
+        // the current HAL session).  AVAudioSession.AvailableInputs reflects TCC grants
+        // immediately via the high-level audio stack, so it reliably shows at least the
+        // built-in microphone even when the HAL query returns zero results.
+        var availableInputs = session.AvailableInputs;
+        if (availableInputs is { Length: > 0 })
+            return availableInputs.Select(p => new AudioDevice($"{p.PortType}:{p.PortName}", p.PortName)).ToArray();
+
+        return Array.Empty<AudioDevice>();
 #elif IOS
         // Set the session category to PlayAndRecord so that AVAudioSession exposes the
         // full set of available input ports: built-in mic, aggregated/virtual devices,
