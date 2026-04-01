@@ -65,10 +65,33 @@ public sealed class AudioService : IAudioService, IDisposable
     public IReadOnlyList<AudioDevice> GetInputDevices()
     {
 #if MACCATALYST
-        // On MacCatalyst, AVAudioSession.AvailableInputs only returns the currently-active
-        // port and omits virtual/aggregate drivers such as BlackHole.  The CoreAudio HAL
-        // (same path used by GetOutputDevices) is the authoritative source for ALL devices.
-        return GetCoreAudioDevices(inputScope: true);
+        // Activate the audio session so the OS grants microphone access before we query
+        // CoreAudio.  Without this, kAudioDevicePropertyStreams with input scope returns
+        // no streams (permission has not yet been acknowledged by the OS) and the device
+        // list is empty.  The PlayAndRecord category also ensures that Bluetooth and
+        // Continuity devices are included in the HAL device list.
+        var session = AVAudioSession.SharedInstance();
+        session.SetCategory(AVAudioSessionCategory.PlayAndRecord,
+            AVAudioSessionCategoryOptions.AllowBluetooth | AVAudioSessionCategoryOptions.AllowBluetoothA2DP,
+            out _);
+        session.SetActive(true, out _);
+        // Use the CoreAudio HAL (not AVAudioSession.AvailableInputs) because AvailableInputs
+        // only returns the currently-active port and omits virtual/aggregate drivers such as
+        // BlackHole.  The HAL is the authoritative source for ALL devices.
+        var coreAudioDevices = GetCoreAudioDevices(inputScope: true);
+        if (coreAudioDevices.Count > 0)
+            return coreAudioDevices;
+
+        // Fallback: the CoreAudio HAL can return nothing immediately after the user grants
+        // microphone permission via the TCC dialog (the new grant has not yet propagated into
+        // the current HAL session).  AVAudioSession.AvailableInputs reflects TCC grants
+        // immediately via the high-level audio stack, so it reliably shows at least the
+        // built-in microphone even when the HAL query returns zero results.
+        var availableInputs = session.AvailableInputs;
+        if (availableInputs is { Length: > 0 })
+            return availableInputs.Select(p => new AudioDevice($"{p.PortType}:{p.PortName}", p.PortName)).ToArray();
+
+        return Array.Empty<AudioDevice>();
 #elif IOS
         // Set the session category to PlayAndRecord so that AVAudioSession exposes the
         // full set of available input ports: built-in mic, aggregated/virtual devices,
@@ -265,7 +288,7 @@ public sealed class AudioService : IAudioService, IDisposable
     private const uint kAudioObjectPropertyName            = 0x6C6E616Du; // 'lnam'
     private const uint kAudioDevicePropertyDeviceUID       = 0x75696420u; // 'uid '
     private const uint kAudioObjectPropertyScopeGlobal     = 0x676C6F62u; // 'glob'
-    private const uint kAudioDevicePropertyScopeInput      = 0x696E7075u; // 'inpu'
+    private const uint kAudioDevicePropertyScopeInput      = 0x696E7074u; // 'inpt'
     private const uint kAudioDevicePropertyScopeOutput     = 0x6F757470u; // 'outp'
     private const uint kAudioObjectPropertyElementMain     = 0;
 

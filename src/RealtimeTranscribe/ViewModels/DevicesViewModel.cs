@@ -3,6 +3,9 @@ using CommunityToolkit.Mvvm.Input;
 using RealtimeTranscribe.Models;
 using RealtimeTranscribe.Services;
 using System.Collections.ObjectModel;
+#if MACCATALYST
+using AVFoundation;
+#endif
 
 namespace RealtimeTranscribe.ViewModels;
 
@@ -41,18 +44,13 @@ public partial class DevicesViewModel : ObservableObject
     private readonly IAudioService _audioService;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasNoInputDevices))]
     private ObservableCollection<SelectableAudioDevice> _inputDevices = [];
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasNoOutputDevices))]
     private ObservableCollection<SelectableAudioDevice> _outputDevices = [];
 
     [ObservableProperty]
     private string _statusMessage = string.Empty;
-
-    public bool HasNoInputDevices  => InputDevices.Count  == 0;
-    public bool HasNoOutputDevices => OutputDevices.Count == 0;
 
     public DevicesViewModel(IAudioService audioService)
     {
@@ -61,11 +59,29 @@ public partial class DevicesViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Refreshes both device lists from the platform audio session.
-    /// Useful when the user navigates to the page or explicitly taps "Refresh".
+    /// Requests microphone permission (shows the OS dialog the first time) and then
+    /// refreshes both device lists from the platform audio session.
+    /// Called automatically when the page appears and when the user taps "Refresh".
     /// </summary>
     [RelayCommand]
-    public void RefreshDevices() => LoadDevices();
+    public async Task RefreshDevices()
+    {
+#if MACCATALYST
+        // On macOS Catalyst, Permissions.RequestAsync<Microphone>() only sets the TCC record
+        // via AVCaptureDevice.RequestAccessForMediaType.  It does NOT activate AVAudioSession
+        // for recording, which means AVAudioSession.AvailableInputs remains null and CoreAudio
+        // HAL input-scope stream queries still return nothing in the same process session.
+        // AVAudioSession.RequestRecordPermission both requests the TCC microphone permission
+        // AND registers the intent with the audio daemon so that the session is recording-ready
+        // before GetInputDevices() is called.
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        AVAudioSession.SharedInstance().RequestRecordPermission(granted => tcs.TrySetResult(granted));
+        await tcs.Task;
+#else
+        await Permissions.RequestAsync<Permissions.Microphone>();
+#endif
+        LoadDevices();
+    }
 
     /// <summary>Selects <paramref name="device"/> as the active input device.</summary>
     [RelayCommand]
