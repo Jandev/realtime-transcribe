@@ -18,16 +18,26 @@ Download the latest `.app` bundle from the [Releases](https://github.com/Jandev/
 
 The released binaries are not code-signed. macOS Gatekeeper will block the app on first launch with a message like *"RealtimeTranscribe.app can't be opened because it is from an unidentified developer."*
 
-**To allow the app to run:**
+> **macOS Sequoia (15) and later — including Tahoe (26.x):** the right-click → **Open** shortcut that bypassed Gatekeeper in older macOS versions no longer works. Use one of the two methods below instead.
 
-1. In **Finder**, right-click (or Control-click) `RealtimeTranscribe.app` and choose **Open**.
-2. In the dialog that appears, click **Open** to confirm.
+### Method 1 — System Settings (recommended)
+
+1. Attempt to open `RealtimeTranscribe.app`. macOS will block it and show a warning.
+2. Open **System Settings → Privacy & Security** and scroll down to the **Security** section.
+3. You will see a message about the blocked app with an **Open Anyway** button. Click it.
+4. Confirm in the dialog that appears (you may be asked for your administrator password).
 
 macOS remembers this choice; subsequent launches will not prompt again.
 
-Alternatively, after seeing the blocked-app message, open **System Settings → Privacy & Security**, scroll to the *Security* section, and click **Open Anyway** next to the blocked app entry.
+### Method 2 — Terminal (quickest)
 
-> **Terminal alternative:** Run `xattr -dr com.apple.quarantine /path/to/RealtimeTranscribe.app` to remove the quarantine flag.
+Run the following command to remove the quarantine attribute Apple attaches to downloaded files:
+
+```bash
+xattr -dr com.apple.quarantine /path/to/RealtimeTranscribe.app
+```
+
+After that, open the app normally.
 
 ---
 
