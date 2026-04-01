@@ -17,7 +17,10 @@ public static class MauiProgram
         builder
             .UseMauiApp<App>()
             .UseMauiCommunityToolkit()
-            .ConfigureFonts(fonts => { });
+            .ConfigureFonts(fonts =>
+            {
+                fonts.AddFont("materialdesignicons-webfont.ttf", "MDIcons");
+            });
 
         // ------------------------------------------------------------------
         // Configuration – appsettings.json embedded as a MAUI raw asset

@@ -4,10 +4,29 @@ namespace RealtimeTranscribe;
 
 public partial class MainPage : ContentPage
 {
+    private readonly MainViewModel _viewModel;
+
     public MainPage(MainViewModel viewModel)
     {
         InitializeComponent();
         BindingContext = viewModel;
+        _viewModel = viewModel;
+        viewModel.PropertyChanged += OnViewModelPropertyChanged;
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainViewModel.Transcript))
+            ScrollEditorToEnd(TranscriptEditor);
+        else if (e.PropertyName == nameof(MainViewModel.DiarizedTranscript))
+            ScrollEditorToEnd(DiarizedTranscriptEditor);
+    }
+
+    private static void ScrollEditorToEnd(Editor editor)
+    {
+        var text = editor.Text;
+        if (!string.IsNullOrEmpty(text))
+            editor.CursorPosition = text.Length;
     }
 
     private async void OnSummaryWebViewNavigated(object? sender, WebNavigatedEventArgs e)

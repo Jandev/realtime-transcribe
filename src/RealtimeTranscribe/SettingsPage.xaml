@@ -7,35 +7,102 @@
 
     <ScrollView>
         <VerticalStackLayout
-            Padding="24,16"
-            Spacing="16">
+            Padding="20,16"
+            Spacing="0">
+
+            <!-- ── Azure OpenAI Configuration ─────────────────────────── -->
+            <Label
+                Style="{StaticResource SectionHeader}"
+                Text="AZURE OPENAI CONFIGURATION"
+                Margin="4,0,0,6" />
+
+            <Border Margin="0,0,0,8">
+                <VerticalStackLayout>
+
+                    <!-- Endpoint -->
+                    <Grid
+                        ColumnDefinitions="*,Auto"
+                        Padding="16,12"
+                        MinimumHeightRequest="44">
+                        <VerticalStackLayout Grid.Column="0" Spacing="2">
+                            <Label
+                                FontSize="13"
+                                Text="Endpoint URL"
+                                TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray500}}" />
+                            <Entry
+                                Keyboard="Url"
+                                Placeholder="https://&lt;resource&gt;.openai.azure.com/"
+                                FontSize="15"
+                                Text="{Binding Endpoint}" />
+                        </VerticalStackLayout>
+                    </Grid>
+
+                    <BoxView HeightRequest="0.5" Margin="16,0,0,0" />
+
+                    <!-- API Key -->
+                    <Grid
+                        ColumnDefinitions="*"
+                        Padding="16,12"
+                        MinimumHeightRequest="44">
+                        <VerticalStackLayout Spacing="2">
+                            <Label
+                                FontSize="13"
+                                Text="API Key"
+                                TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray500}}" />
+                            <Entry
+                                IsPassword="True"
+                                Placeholder="Leave blank to use DefaultAzureCredential"
+                                FontSize="15"
+                                Text="{Binding ApiKey}" />
+                        </VerticalStackLayout>
+                    </Grid>
+
+                    <BoxView HeightRequest="0.5" Margin="16,0,0,0" />
+
+                    <!-- Whisper Deployment -->
+                    <Grid
+                        ColumnDefinitions="*"
+                        Padding="16,12"
+                        MinimumHeightRequest="44">
+                        <VerticalStackLayout Spacing="2">
+                            <Label
+                                FontSize="13"
+                                Text="Whisper Deployment Name"
+                                TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray500}}" />
+                            <Entry
+                                Placeholder="whisper-large-v3"
+                                FontSize="15"
+                                Text="{Binding WhisperDeployment}" />
+                        </VerticalStackLayout>
+                    </Grid>
+
+                    <BoxView HeightRequest="0.5" Margin="16,0,0,0" />
+
+                    <!-- Chat Deployment -->
+                    <Grid
+                        ColumnDefinitions="*"
+                        Padding="16,12"
+                        MinimumHeightRequest="44">
+                        <VerticalStackLayout Spacing="2">
+                            <Label
+                                FontSize="13"
+                                Text="Chat Deployment Name"
+                                TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray500}}" />
+                            <Entry
+                                Placeholder="gpt-4o-mini"
+                                FontSize="15"
+                                Text="{Binding ChatDeployment}" />
+                        </VerticalStackLayout>
+                    </Grid>
+
+                </VerticalStackLayout>
+            </Border>
 
             <Label
-                FontAttributes="Bold"
-                FontSize="20"
-                Text="Azure OpenAI Configuration" />
-
-            <Label Text="Endpoint URL" />
-            <Entry
-                Keyboard="Url"
-                Placeholder="https://&lt;resource&gt;.openai.azure.com/"
-                Text="{Binding Endpoint}" />
-
-            <Label Text="API Key (leave blank to use DefaultAzureCredential)" />
-            <Entry
-                IsPassword="True"
-                Placeholder="••••••••"
-                Text="{Binding ApiKey}" />
-
-            <Label Text="Whisper Deployment Name" />
-            <Entry
-                Placeholder="whisper-large-v3"
-                Text="{Binding WhisperDeployment}" />
-
-            <Label Text="Chat Deployment Name" />
-            <Entry
-                Placeholder="gpt-4o-mini"
-                Text="{Binding ChatDeployment}" />
+                FontSize="13"
+                Margin="4,0,0,24"
+                Text="Settings are stored securely on this device."
+                TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray500}}" />
 
             <Label
                 FontAttributes="Bold"
@@ -54,15 +121,19 @@
                     Text="Browse…" />
             </HorizontalStackLayout>
 
+            <!-- ── Save button ────────────────────────────────────────── -->
             <Button
                 Command="{Binding SaveCommand}"
                 HorizontalOptions="Fill"
+                Margin="0,0,0,12"
                 Text="Save Settings" />
 
+            <!-- Save status feedback -->
             <Label
                 HorizontalOptions="Center"
+                FontSize="15"
                 Text="{Binding SaveStatus}"
-                TextColor="{StaticResource Primary}" />
+                TextColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}" />
 
         </VerticalStackLayout>
     </ScrollView>

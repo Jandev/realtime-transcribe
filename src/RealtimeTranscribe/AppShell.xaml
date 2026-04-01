@@ -7,17 +7,26 @@
     Shell.FlyoutBehavior="Disabled">
 
     <TabBar>
-        <Tab Title="Transcribe" Icon="microphone.svg">
+        <Tab Title="Record">
+            <Tab.Icon>
+                <FontImageSource FontFamily="MDIcons" Glyph="&#xF036C;" Size="20" />
+            </Tab.Icon>
             <ShellContent
                 ContentTemplate="{DataTemplate local:MainPage}"
                 Route="MainPage" />
         </Tab>
-        <Tab Title="Devices" Icon="microphone.svg">
+        <Tab Title="Devices">
+            <Tab.Icon>
+                <FontImageSource FontFamily="MDIcons" Glyph="&#xF04C3;" Size="20" />
+            </Tab.Icon>
             <ShellContent
                 ContentTemplate="{DataTemplate local:DevicesPage}"
                 Route="DevicesPage" />
         </Tab>
-        <Tab Title="Settings" Icon="settings.svg">
+        <Tab Title="Settings">
+            <Tab.Icon>
+                <FontImageSource FontFamily="MDIcons" Glyph="&#xF0493;" Size="20" />
+            </Tab.Icon>
             <ShellContent
                 ContentTemplate="{DataTemplate local:SettingsPage}"
                 Route="SettingsPage" />
