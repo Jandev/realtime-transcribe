@@ -45,6 +45,15 @@ public static class MauiProgram
         builder.Services.AddSingleton(azureSettings);
 
         // ------------------------------------------------------------------
+        // File storage – output folder loaded from persisted Preferences
+        // ------------------------------------------------------------------
+        var fileStorageService = new FileStorageService
+        {
+            OutputFolder = Preferences.Default.Get("OutputFolder", string.Empty)
+        };
+        builder.Services.AddSingleton<IFileStorageService>(fileStorageService);
+
+        // ------------------------------------------------------------------
         // Services
         // ------------------------------------------------------------------
         builder.Services.AddSingleton<IAudioService, AudioService>();
