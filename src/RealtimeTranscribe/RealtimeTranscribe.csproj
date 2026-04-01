@@ -36,6 +36,9 @@
     <!-- Images -->
     <MauiImage Include="Resources\Images\*" BaseSize="24,24" />
 
+    <!-- Fonts -->
+    <MauiFont Include="Resources\Fonts\*" />
+
     <!-- Raw Assets -->
     <MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
