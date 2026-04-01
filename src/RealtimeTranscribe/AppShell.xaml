@@ -4,8 +4,7 @@
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:local="clr-namespace:RealtimeTranscribe"
-    Shell.FlyoutBehavior="Disabled"
-    Shell.TabBarFontSize="13">
+    Shell.FlyoutBehavior="Disabled">
 
     <TabBar>
         <Tab Title="Transcribe" Icon="microphone.svg">
