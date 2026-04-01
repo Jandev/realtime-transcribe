@@ -13,8 +13,8 @@ public class AppDelegate : MauiUIApplicationDelegate
     {
         var result = base.FinishedLaunching(application, launchOptions);
 
-        // Set tab bar item title font size to 13pt (readable, matches Apple HIG caption size)
-        var font = UIFont.SystemFontOfSize(13);
+        // Set tab bar item title font size to 16pt for readability on MacCatalyst
+        var font = UIFont.SystemFontOfSize(16);
         var attrs = new UIStringAttributes { Font = font };
 
         var appearance = new UITabBarAppearance();
