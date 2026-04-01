@@ -65,9 +65,19 @@ public sealed class AudioService : IAudioService, IDisposable
     public IReadOnlyList<AudioDevice> GetInputDevices()
     {
 #if MACCATALYST
-        // On MacCatalyst, AVAudioSession.AvailableInputs only returns the currently-active
-        // port and omits virtual/aggregate drivers such as BlackHole.  The CoreAudio HAL
-        // (same path used by GetOutputDevices) is the authoritative source for ALL devices.
+        // Activate the audio session so the OS grants microphone access before we query
+        // CoreAudio.  Without this, kAudioDevicePropertyStreams with input scope returns
+        // no streams (permission has not yet been acknowledged by the OS) and the device
+        // list is empty.  The PlayAndRecord category also ensures that Bluetooth and
+        // Continuity devices are included in the HAL device list.
+        var session = AVAudioSession.SharedInstance();
+        session.SetCategory(AVAudioSessionCategory.PlayAndRecord,
+            AVAudioSessionCategoryOptions.AllowBluetooth | AVAudioSessionCategoryOptions.AllowBluetoothA2DP,
+            out _);
+        session.SetActive(true, out _);
+        // Use the CoreAudio HAL (not AVAudioSession.AvailableInputs) because AvailableInputs
+        // only returns the currently-active port and omits virtual/aggregate drivers such as
+        // BlackHole.  The HAL is the authoritative source for ALL devices.
         return GetCoreAudioDevices(inputScope: true);
 #elif IOS
         // Set the session category to PlayAndRecord so that AVAudioSession exposes the
