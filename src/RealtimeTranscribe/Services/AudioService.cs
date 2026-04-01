@@ -64,10 +64,15 @@ public sealed class AudioService : IAudioService, IDisposable
 
     public IReadOnlyList<AudioDevice> GetInputDevices()
     {
-#if MACCATALYST || IOS
+#if MACCATALYST
+        // On MacCatalyst, AVAudioSession.AvailableInputs only returns the currently-active
+        // port and omits virtual/aggregate drivers such as BlackHole.  The CoreAudio HAL
+        // (same path used by GetOutputDevices) is the authoritative source for ALL devices.
+        return GetCoreAudioDevices(inputScope: true);
+#elif IOS
         // Set the session category to PlayAndRecord so that AVAudioSession exposes the
-        // full set of available input ports: built-in mic, aggregated/virtual devices
-        // (e.g. BlackHole, multi-output), Bluetooth, and iPhone via Continuity.
+        // full set of available input ports: built-in mic, aggregated/virtual devices,
+        // Bluetooth, and iPhone via Continuity.
         // Without this, only the currently-active port is returned.
         var session = AVAudioSession.SharedInstance();
         session.SetCategory(AVAudioSessionCategory.PlayAndRecord,
@@ -189,12 +194,27 @@ public sealed class AudioService : IAudioService, IDisposable
     }
 
     /// <summary>
-    /// Applies the user's preferred input device to the <c>AVAudioSession</c> so the next
-    /// recording segment uses it. Has no effect when no device is selected (system default is used).
+    /// Applies the user's preferred input device so the next recording segment uses it.
+    /// <para>
+    /// On MacCatalyst the device list is sourced from the CoreAudio HAL (which includes
+    /// virtual/aggregate drivers such as BlackHole).  <c>AVAudioSession.setPreferredInput</c>
+    /// only works with ports already in <c>AvailableInputs</c> — it cannot route to HAL
+    /// devices that are absent from that list.  Instead we set the CoreAudio system-default
+    /// input device directly so that <c>AVAudioRecorder</c> (used internally by
+    /// Plugin.Maui.Audio) picks it up on the next recording start.
+    /// </para>
+    /// <para>
+    /// On iOS, the standard <c>AVAudioSession.setPreferredInput</c> path is used.
+    /// </para>
     /// </summary>
     private void ApplyPreferredInputDevice()
     {
-#if MACCATALYST || IOS
+#if MACCATALYST
+        if (_selectedInputDeviceId is null)
+            return;
+
+        SetCoreAudioDefaultInputDevice(_selectedInputDeviceId);
+#elif IOS
         if (_selectedInputDeviceId is null)
             return;
 
@@ -239,14 +259,15 @@ public sealed class AudioService : IAudioService, IDisposable
     // Property selectors, scopes, and elements use four-character codes (FourCC) as
     // per the CoreAudio HAL API convention. Each uint value encodes four ASCII bytes,
     // shown in the adjacent comment, e.g. 0x64657623 == 'dev#'.
-    private const uint kAudioHardwarePropertyDevices   = 0x64657623u; // 'dev#'
-    private const uint kAudioDevicePropertyStreams     = 0x73746D23u; // 'stm#'
-    private const uint kAudioObjectPropertyName        = 0x6C6E616Du; // 'lnam'
-    private const uint kAudioDevicePropertyDeviceUID   = 0x75696420u; // 'uid '
-    private const uint kAudioObjectPropertyScopeGlobal = 0x676C6F62u; // 'glob'
-    private const uint kAudioDevicePropertyScopeInput  = 0x696E7075u; // 'inpu'
-    private const uint kAudioDevicePropertyScopeOutput = 0x6F757470u; // 'outp'
-    private const uint kAudioObjectPropertyElementMain = 0;
+    private const uint kAudioHardwarePropertyDevices        = 0x64657623u; // 'dev#'
+    private const uint kAudioHardwarePropertyDefaultInputDevice = 0x64496E20u; // 'dIn '
+    private const uint kAudioDevicePropertyStreams          = 0x73746D23u; // 'stm#'
+    private const uint kAudioObjectPropertyName            = 0x6C6E616Du; // 'lnam'
+    private const uint kAudioDevicePropertyDeviceUID       = 0x75696420u; // 'uid '
+    private const uint kAudioObjectPropertyScopeGlobal     = 0x676C6F62u; // 'glob'
+    private const uint kAudioDevicePropertyScopeInput      = 0x696E7075u; // 'inpu'
+    private const uint kAudioDevicePropertyScopeOutput     = 0x6F757470u; // 'outp'
+    private const uint kAudioObjectPropertyElementMain     = 0;
 
     [DllImport("/System/Library/Frameworks/CoreAudio.framework/CoreAudio")]
     private static extern int AudioObjectGetPropertyDataSize(
@@ -264,6 +285,15 @@ public sealed class AudioService : IAudioService, IDisposable
         IntPtr qualifierData,
         ref uint ioDataSize,
         IntPtr outData);
+
+    [DllImport("/System/Library/Frameworks/CoreAudio.framework/CoreAudio")]
+    private static extern int AudioObjectSetPropertyData(
+        uint objectId,
+        in AudioObjectPropertyAddress address,
+        uint qualifierDataSize,
+        IntPtr qualifierData,
+        uint dataSize,
+        IntPtr inData);
 
     [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
     private static extern void CFRelease(IntPtr cfTypeRef);
@@ -323,6 +353,72 @@ public sealed class AudioService : IAudioService, IDisposable
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Sets the CoreAudio system-default input device to the device identified by
+    /// <paramref name="uid"/>.  This makes <c>AVAudioRecorder</c> (used internally
+    /// by Plugin.Maui.Audio) capture from the chosen device on the next recording start.
+    /// </summary>
+    private static void SetCoreAudioDefaultInputDevice(string uid)
+    {
+        var devicesAddr = new AudioObjectPropertyAddress
+        {
+            mSelector = kAudioHardwarePropertyDevices,
+            mScope    = kAudioObjectPropertyScopeGlobal,
+            mElement  = kAudioObjectPropertyElementMain,
+        };
+
+        if (AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, in devicesAddr, 0, IntPtr.Zero, out uint dataSize) != 0)
+            return;
+
+        int deviceCount = (int)(dataSize / sizeof(uint));
+        if (deviceCount == 0)
+            return;
+
+        var deviceIds = new uint[deviceCount];
+        var gch = GCHandle.Alloc(deviceIds, GCHandleType.Pinned);
+        try
+        {
+            if (AudioObjectGetPropertyData(kAudioObjectSystemObject, in devicesAddr, 0, IntPtr.Zero, ref dataSize, gch.AddrOfPinnedObject()) != 0)
+                return;
+        }
+        finally
+        {
+            gch.Free();
+        }
+
+        foreach (uint deviceId in deviceIds)
+        {
+            var deviceUid = GetCoreAudioStringProperty(deviceId, kAudioDevicePropertyDeviceUID, kAudioObjectPropertyScopeGlobal);
+            if (deviceUid != uid)
+                continue;
+
+            // Found the device — set it as the system-default input device.
+            var defaultInputAddr = new AudioObjectPropertyAddress
+            {
+                mSelector = kAudioHardwarePropertyDefaultInputDevice,
+                mScope    = kAudioObjectPropertyScopeGlobal,
+                mElement  = kAudioObjectPropertyElementMain,
+            };
+
+            var idBuf = new uint[] { deviceId };
+            var gch2 = GCHandle.Alloc(idBuf, GCHandleType.Pinned);
+            try
+            {
+                AudioObjectSetPropertyData(
+                    kAudioObjectSystemObject, in defaultInputAddr,
+                    0, IntPtr.Zero,
+                    sizeof(uint), gch2.AddrOfPinnedObject());
+            }
+            finally
+            {
+                gch2.Free();
+            }
+            return;
+        }
+
+        System.Diagnostics.Debug.WriteLine($"[AudioService] SetCoreAudioDefaultInputDevice: device UID '{uid}' not found.");
     }
 
     /// <summary>
