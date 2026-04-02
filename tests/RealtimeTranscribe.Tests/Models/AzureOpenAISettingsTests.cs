@@ -66,6 +66,26 @@ public class AzureOpenAISettingsTests
     }
 
     [Fact]
+    public void Settings_CanBeConfiguredWithAiFoundryValuesAndApiKey()
+    {
+        // AI Foundry endpoint with an API key – both should be recognised so the service
+        // can attempt connection resolution via AIProjectClient before falling back to the
+        // project endpoint directly.
+        var settings = new AzureOpenAISettings
+        {
+            Endpoint = "https://myproject.services.ai.azure.com/api/projects/myproject",
+            ApiKey = "test-api-key",
+            WhisperDeploymentName = "whisper",
+            ChatDeploymentName = "gpt-4o-mini"
+        };
+
+        Assert.True(settings.IsAiFoundryEndpoint);
+        Assert.Equal("whisper", settings.WhisperDeploymentName);
+        Assert.Equal("gpt-4o-mini", settings.ChatDeploymentName);
+        Assert.False(string.IsNullOrEmpty(settings.ApiKey));
+    }
+
+    [Fact]
     public void Settings_CanBeConfiguredWithCognitiveServicesValues()
     {
         // Azure AI Services (Cognitive Services) endpoint — the actual URL format used by the

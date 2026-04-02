@@ -22,9 +22,10 @@ namespace RealtimeTranscribe.Services;
 ///     <term>Azure AI Foundry</term>
 ///     <description>Set <see cref="AzureOpenAISettings.Endpoint"/> to the project endpoint
 ///     <c>https://&lt;project&gt;.services.ai.azure.com/api/projects/&lt;project&gt;</c>.
-///     The <see cref="AzureOpenAIClient"/> appends
-///     <c>/openai/deployments/{model}/…</c> to whatever base URL is configured, so the
-///     Foundry project endpoint works without any extra plumbing.</description>
+///     Both API-key and keyless (Entra ID) authentication are supported.
+///     When using a Foundry endpoint the service first tries to resolve the connected
+///     Azure OpenAI resource URL via <see cref="Azure.AI.Projects.AIProjectClient"/>,
+///     falling back to the project endpoint directly for native Foundry model deployments.</description>
 ///   </item>
 /// </list>
 /// For keyless (Entra ID) authentication leave <see cref="AzureOpenAISettings.ApiKey"/> empty;
@@ -149,7 +150,18 @@ public class TranscriptionService : ITranscriptionService
 
         if (!string.IsNullOrWhiteSpace(_settings.ApiKey))
         {
-            return new AzureOpenAIClient(endpoint, new Azure.AzureKeyCredential(_settings.ApiKey));
+            var keyCredential = new Azure.AzureKeyCredential(_settings.ApiKey);
+
+            // For Azure AI Foundry endpoints with an API key, the raw Foundry project URL
+            // causes an API-version mismatch when used with AzureOpenAIClient directly.
+            // Fall through to the direct endpoint usage, which works for native Foundry
+            // model deployments that expose the /openai/deployments/{model}/… path.
+            // Connection resolution via AIProjectClient is not performed here because
+            // the SDK's AIProjectClient does not accept API-key credentials; use keyless
+            // (DefaultAzureCredential) authentication if you need automatic resolution of
+            // a connected Azure OpenAI resource URL.
+
+            return new AzureOpenAIClient(endpoint, keyCredential);
         }
 
         var credential = new DefaultAzureCredential();
