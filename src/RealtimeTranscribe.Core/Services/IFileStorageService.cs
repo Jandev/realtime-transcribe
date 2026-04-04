@@ -1,3 +1,5 @@
+using RealtimeTranscribe.Models;
+
 namespace RealtimeTranscribe.Services;
 
 /// <summary>
@@ -15,4 +17,15 @@ public interface IFileStorageService
     /// or when <paramref name="summary"/> is null or empty.
     /// </summary>
     Task SaveSummaryAsync(string summary, DateTime timestamp, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns all Markdown files in <see cref="OutputFolder"/>, ordered newest-first.
+    /// Returns an empty list when <see cref="OutputFolder"/> is null, empty, or does not exist.
+    /// </summary>
+    Task<IReadOnlyList<TranscriptionFile>> ListSummariesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads and returns the text content of the file at <paramref name="filePath"/>.
+    /// </summary>
+    Task<string> LoadSummaryAsync(string filePath, CancellationToken cancellationToken = default);
 }

@@ -14,6 +14,12 @@ public partial class MainPage : ContentPage
         viewModel.PropertyChanged += OnViewModelPropertyChanged;
     }
 
+    protected override void OnAppearing()
+    {
+        base.OnAppearing();
+        _viewModel.RefreshFilesCommand.Execute(null);
+    }
+
     private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(MainViewModel.Transcript))

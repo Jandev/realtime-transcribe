@@ -114,4 +114,126 @@ public class FileStorageServiceTests : IDisposable
         var content = await File.ReadAllTextAsync(filePath);
         Assert.Equal("Second version", content);
     }
+
+    // ── ListSummariesAsync ───────────────────────────────────────────────
+
+    [Fact]
+    public async Task ListSummariesAsync_WithNullOutputFolder_ReturnsEmpty()
+    {
+        var service = CreateService(outputFolder: null);
+
+        var result = await service.ListSummariesAsync();
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public async Task ListSummariesAsync_WithEmptyOutputFolder_ReturnsEmpty()
+    {
+        var service = CreateService(outputFolder: string.Empty);
+
+        var result = await service.ListSummariesAsync();
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public async Task ListSummariesAsync_WithNonExistentFolder_ReturnsEmpty()
+    {
+        var service = CreateService(outputFolder: Path.Combine(_tempDir, "nonexistent"));
+
+        var result = await service.ListSummariesAsync();
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public async Task ListSummariesAsync_WithNoMarkdownFiles_ReturnsEmpty()
+    {
+        var service = CreateService(_tempDir);
+        File.WriteAllText(Path.Combine(_tempDir, "notes.txt"), "not a summary");
+
+        var result = await service.ListSummariesAsync();
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public async Task ListSummariesAsync_ReturnsMarkdownFilesOrderedNewestFirst()
+    {
+        var service = CreateService(_tempDir);
+        var t1 = new DateTime(2024, 1, 1, 9, 0, 0);
+        var t2 = new DateTime(2024, 3, 15, 14, 30, 0);
+        var t3 = new DateTime(2024, 6, 10, 11, 0, 0);
+
+        await service.SaveSummaryAsync("A", t1);
+        await service.SaveSummaryAsync("B", t2);
+        await service.SaveSummaryAsync("C", t3);
+
+        var result = await service.ListSummariesAsync();
+
+        Assert.Equal(3, result.Count);
+        // Newest file written last; order is by LastWriteTime descending
+        Assert.All(result, f => Assert.EndsWith(".md", f.FilePath));
+    }
+
+    [Fact]
+    public async Task ListSummariesAsync_SetsDisplayNameFromFilename()
+    {
+        var service = CreateService(_tempDir);
+        var timestamp = new DateTime(2024, 3, 15, 14, 30, 0);
+
+        await service.SaveSummaryAsync("content", timestamp);
+
+        var result = await service.ListSummariesAsync();
+
+        Assert.Single(result);
+        Assert.Equal("Mar 15, 2024  14:30", result[0].DisplayName);
+    }
+
+    [Fact]
+    public async Task ListSummariesAsync_PopulatesFilePath()
+    {
+        var service = CreateService(_tempDir);
+        var timestamp = new DateTime(2024, 3, 15, 14, 30, 0);
+
+        await service.SaveSummaryAsync("content", timestamp);
+
+        var result = await service.ListSummariesAsync();
+
+        Assert.Single(result);
+        Assert.Equal(Path.Combine(_tempDir, "20240315 1430.md"), result[0].FilePath);
+    }
+
+    // ── LoadSummaryAsync ─────────────────────────────────────────────────
+
+    [Fact]
+    public async Task LoadSummaryAsync_ReturnsFileContent()
+    {
+        var service = CreateService(_tempDir);
+        var timestamp = new DateTime(2024, 6, 10, 11, 0, 0);
+        var expected = "## Summary\n\nTest content";
+
+        await service.SaveSummaryAsync(expected, timestamp);
+        var filePath = Path.Combine(_tempDir, "20240610 1100.md");
+
+        var result = await service.LoadSummaryAsync(filePath);
+
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public async Task LoadSummaryAsync_ReadsUtf8Content()
+    {
+        var service = CreateService(_tempDir);
+        var timestamp = new DateTime(2024, 1, 1, 9, 0, 0);
+        var expected = "# Samenvatting\n\nActiepunten: **verplicht** — émoji 🎙";
+
+        await service.SaveSummaryAsync(expected, timestamp);
+        var filePath = Path.Combine(_tempDir, "20240101 0900.md");
+
+        var result = await service.LoadSummaryAsync(filePath);
+
+        Assert.Equal(expected, result);
+    }
 }

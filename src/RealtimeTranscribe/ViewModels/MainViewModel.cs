@@ -1,6 +1,8 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using RealtimeTranscribe.Models;
 using RealtimeTranscribe.Services;
+using System.Collections.ObjectModel;
 using System.Text;
 
 namespace RealtimeTranscribe.ViewModels;
@@ -198,6 +200,53 @@ public partial class MainViewModel : ObservableObject
     private bool HasTranscript => !string.IsNullOrEmpty(Transcript) && !IsRecording && !IsProcessing;
     private bool HasDiarizedTranscript => !string.IsNullOrEmpty(DiarizedTranscript) && !IsRecording && !IsProcessing;
     private bool HasSummary => !string.IsNullOrEmpty(Summary) && !IsRecording && !IsProcessing;
+
+    // ── Sidebar: saved transcription files ──────────────────────────────
+
+    /// <summary>Transcription summary files available in the output folder, newest-first.</summary>
+    public ObservableCollection<TranscriptionFile> TranscriptionFiles { get; } = new();
+
+    [ObservableProperty]
+    private TranscriptionFile? _selectedTranscriptionFile;
+
+    partial void OnSelectedTranscriptionFileChanged(TranscriptionFile? value)
+    {
+        if (value is not null)
+            _ = LoadTranscriptionFileAsync(value);
+    }
+
+    [RelayCommand]
+    private async Task RefreshFilesAsync()
+    {
+        try
+        {
+            var files = await _fileStorageService.ListSummariesAsync();
+            TranscriptionFiles.Clear();
+            foreach (var f in files)
+                TranscriptionFiles.Add(f);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[MainViewModel] Error refreshing files: {ex}");
+        }
+    }
+
+    private async Task LoadTranscriptionFileAsync(TranscriptionFile file)
+    {
+        try
+        {
+            StatusMessage = $"Loading {file.DisplayName}…";
+            var content = await _fileStorageService.LoadSummaryAsync(file.FilePath);
+            Transcript = string.Empty;
+            DiarizedTranscript = string.Empty;
+            Summary = content;
+            StatusMessage = $"Loaded: {file.DisplayName}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error loading file: {ex.Message}";
+        }
+    }
 
     private async Task StartRecordingAsync()
     {
@@ -450,7 +499,10 @@ public partial class MainViewModel : ObservableObject
                 _cts.Token);
 
             if (!string.IsNullOrEmpty(Summary))
+            {
                 await _fileStorageService.SaveSummaryAsync(Summary, DateTime.Now, _cts.Token);
+                await RefreshFilesAsync();
+            }
 
             StatusMessage = "Done ✓";
         }
