@@ -57,7 +57,7 @@ public class FileStorageService : IFileStorageService
                 System.Globalization.CultureInfo.InvariantCulture,
                 System.Globalization.DateTimeStyles.None, out var dt))
         {
-            return dt.ToString("MMM d, yyyy  HH:mm");
+            return dt.ToString("MMM d, yyyy HH:mm");
         }
 
         return stem;

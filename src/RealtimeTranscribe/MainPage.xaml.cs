@@ -1,3 +1,4 @@
+using CommunityToolkit.Mvvm.Input;
 using RealtimeTranscribe.ViewModels;
 
 namespace RealtimeTranscribe;
@@ -17,7 +18,8 @@ public partial class MainPage : ContentPage
     protected override void OnAppearing()
     {
         base.OnAppearing();
-        _viewModel.RefreshFilesCommand.Execute(null);
+        if (_viewModel.RefreshFilesCommand is IAsyncRelayCommand asyncCmd)
+            _ = asyncCmd.ExecuteAsync(null);
     }
 
     private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)

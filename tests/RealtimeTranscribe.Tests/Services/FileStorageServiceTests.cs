@@ -188,7 +188,7 @@ public class FileStorageServiceTests : IDisposable
         var result = await service.ListSummariesAsync();
 
         Assert.Single(result);
-        Assert.Equal("Mar 15, 2024  14:30", result[0].DisplayName);
+        Assert.Equal("Mar 15, 2024 14:30", result[0].DisplayName);
     }
 
     [Fact]
