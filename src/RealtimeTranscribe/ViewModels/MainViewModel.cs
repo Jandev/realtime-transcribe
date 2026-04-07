@@ -254,38 +254,54 @@ public partial class MainViewModel : ObservableObject
     /// <summary>
     /// Appends <paramref name="segment"/> to <see cref="Transcript"/> one character at a time
     /// to produce a visually fluent "streaming" effect.  Must be called from a background thread;
-    /// all UI updates are dispatched to the main thread.  Respects <paramref name="ct"/> on every
-    /// inter-character delay so cancellation stops the animation immediately.
+    /// each character write is dispatched to the main thread individually via a synchronous lambda.
+    /// Respects <paramref name="ct"/> on every inter-character delay so cancellation stops the
+    /// animation immediately.
+    /// <para>
+    /// IMPORTANT: Do NOT pass an <c>async</c> lambda to <see cref="MainThread.InvokeOnMainThreadAsync"/>.
+    /// On MacCatalyst, doing so creates a nested async state machine whose continuations are
+    /// dispatched through <c>NSAsyncSynchronizationContextDispatcher</c>.  A known Mono interpreter
+    /// bug causes this path to dereference a stale class-vtable pointer (null + 0xa0 offset),
+    /// producing an <c>EXC_BAD_ACCESS</c> SIGSEGV that cannot be caught by managed try/catch.
+    /// Instead the animation loop runs on the calling background thread and only the property
+    /// setter is marshalled to the main thread via a synchronous lambda.
+    /// </para>
     /// </summary>
     private async Task AppendToTranscriptAsync(string segment, CancellationToken ct)
     {
         if (string.IsNullOrEmpty(segment))
             return;
 
-        await MainThread.InvokeOnMainThreadAsync(async () =>
+        // Read the current Transcript value to build the initial StringBuilder.
+        // String property reads are reference-atomic on 64-bit platforms, so this
+        // background-thread read is safe (worst case: a stale prefix string, which is
+        // a visible glitch far less severe than a crash).
+        var prefix = string.IsNullOrEmpty(Transcript) ? string.Empty : " ";
+        var textToAppend = prefix + segment;
+        var sb = new StringBuilder(Transcript);
+
+        foreach (char c in textToAppend)
         {
-            var prefix = string.IsNullOrEmpty(Transcript) ? string.Empty : " ";
-            var textToAppend = prefix + segment;
-            var sb = new StringBuilder(Transcript);
+            if (ct.IsCancellationRequested)
+                return;
 
-            foreach (char c in textToAppend)
+            sb.Append(c);
+
+            // Dispatch the property update via a synchronous lambda.  This avoids
+            // placing an async state machine into InvokeOnMainThreadAsync and keeps
+            // all Task.Delay suspensions on the background thread where they are safe.
+            var snapshot = sb.ToString();
+            await MainThread.InvokeOnMainThreadAsync(() => { Transcript = snapshot; });
+
+            try
             {
-                if (ct.IsCancellationRequested)
-                    return;
-
-                sb.Append(c);
-                Transcript = sb.ToString();
-
-                try
-                {
-                    await Task.Delay(TranscriptAnimationDelayMs, ct);
-                }
-                catch (OperationCanceledException)
-                {
-                    return;
-                }
+                await Task.Delay(TranscriptAnimationDelayMs, ct);
             }
-        });
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+        }
     }
 
     /// <summary>
