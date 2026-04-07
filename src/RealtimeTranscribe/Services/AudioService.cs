@@ -32,6 +32,14 @@ public sealed class AudioService : IAudioService, IDisposable
     private readonly IAudioManager _audioManager;
     private IAudioRecorder? _recorder;
 
+    // True for the entire duration of a recording session — from the moment StartRecordingAsync
+    // is entered until StopRecordingAsync completes.  Unlike _recorder.IsRecording, this flag
+    // stays true during the brief inter-recorder gaps inside GetCurrentChunkAsync() (where the
+    // old recorder has stopped but the new one has not yet started).  GetInputDevices() uses
+    // this flag so that SetCategory/SetActive is never called while the session is active,
+    // preventing a spurious FinishedRecording callback that would otherwise crash the app.
+    private volatile bool _isRecordingSession = false;
+
     private string? _selectedInputDeviceId;
     private string? _selectedOutputDeviceId;
 
@@ -66,7 +74,7 @@ public sealed class AudioService : IAudioService, IDisposable
     {
 #if MACCATALYST
         var session = AVAudioSession.SharedInstance();
-        if (!IsRecording)
+        if (!_isRecordingSession)
         {
             // Activate the audio session so the OS grants microphone access before we
             // query CoreAudio.  Without this, kAudioDevicePropertyStreams with input scope
@@ -74,12 +82,14 @@ public sealed class AudioService : IAudioService, IDisposable
             // the device list is empty.  The PlayAndRecord category also ensures that
             // Bluetooth and Continuity devices are included in the HAL device list.
             //
-            // IMPORTANT: Skip this when recording is active.  Calling SetCategory or
-            // SetActive while AVAudioRecorder is running can interrupt the active
-            // recording, causing AVAudioRecorder's FinishedRecording delegate to fire
-            // prematurely.  When the user later stops recording our StopAsync() call
-            // triggers FinishedRecording a second time, which calls SetResult() on an
-            // already-completed TaskCompletionSource and crashes the app.
+            // IMPORTANT: Skip this when a recording session is active (including during the
+            // brief inter-recorder gap in GetCurrentChunkAsync where the old recorder has
+            // stopped but the new one has not yet started).  Calling SetCategory or
+            // SetActive while AVAudioRecorder is running — or while we are restarting it —
+            // can interrupt the active recording, causing AVAudioRecorder's FinishedRecording
+            // delegate to fire prematurely.  When the user later stops recording our
+            // StopAsync() call triggers FinishedRecording a second time, which calls
+            // SetResult() on an already-completed TaskCompletionSource and crashes the app.
             session.SetCategory(AVAudioSessionCategory.PlayAndRecord,
                 AVAudioSessionCategoryOptions.AllowBluetooth | AVAudioSessionCategoryOptions.AllowBluetoothA2DP,
                 out _);
@@ -108,10 +118,11 @@ public sealed class AudioService : IAudioService, IDisposable
         // Bluetooth, and iPhone via Continuity.
         // Without this, only the currently-active port is returned.
         //
-        // IMPORTANT: Skip this when recording is active to avoid interrupting the
-        // active AVAudioRecorder (see MacCatalyst note above for the full explanation).
+        // IMPORTANT: Skip this when a recording session is active to avoid interrupting the
+        // active AVAudioRecorder or the inter-recorder restart gap in GetCurrentChunkAsync
+        // (see MacCatalyst note above for the full explanation).
         var session = AVAudioSession.SharedInstance();
-        if (!IsRecording)
+        if (!_isRecordingSession)
         {
             session.SetCategory(AVAudioSessionCategory.PlayAndRecord,
                 AVAudioSessionCategoryOptions.AllowBluetooth | AVAudioSessionCategoryOptions.AllowBluetoothA2DP,
@@ -165,9 +176,20 @@ public sealed class AudioService : IAudioService, IDisposable
 
     public async Task StartRecordingAsync()
     {
-        ApplyPreferredInputDevice();
-        _recorder = _audioManager.CreateRecorder();
-        await _recorder.StartAsync();
+        // Set the session flag before creating the recorder so that GetInputDevices()
+        // never calls SetCategory/SetActive from the very start of the session.
+        _isRecordingSession = true;
+        try
+        {
+            ApplyPreferredInputDevice();
+            _recorder = _audioManager.CreateRecorder();
+            await _recorder.StartAsync();
+        }
+        catch
+        {
+            _isRecordingSession = false;
+            throw;
+        }
     }
 
     public async Task<byte[]> StopRecordingAsync()
@@ -177,7 +199,21 @@ public sealed class AudioService : IAudioService, IDisposable
 
         try
         {
-            // Always attempt StopAsync even when IsRecording is false: a Bluetooth device
+            if (!_recorder.IsRecording)
+            {
+                // The recorder was already stopped by an external interruption (e.g. a phone
+                // call, Siri, or another app taking over the audio session).  The underlying
+                // AVAudioRecorder's FinishedRecording delegate has already fired and completed
+                // the internal TaskCompletionSource.  Calling StopAsync() now would invoke
+                // recorder.Stop() a second time, which can trigger FinishedRecording again
+                // and call SetResult() on an already-completed TCS, throwing
+                // InvalidOperationException inside a native ObjC callback — an unhandled
+                // exception that crashes the app.  Return empty bytes so the caller can work
+                // with whatever transcript segments were captured before the interruption.
+                return Array.Empty<byte>();
+            }
+
+            // Always attempt StopAsync when the recorder is still active: a Bluetooth device
             // may have disconnected and caused the underlying recorder to stop on its own,
             // but there may still be audio data buffered that we can retrieve.
             var audioSource = await _recorder.StopAsync();
@@ -193,6 +229,12 @@ public sealed class AudioService : IAudioService, IDisposable
             System.Diagnostics.Debug.WriteLine($"[AudioService] StopRecordingAsync failed: {ex}");
             return Array.Empty<byte>();
         }
+        finally
+        {
+            // Always clear the session flag so GetInputDevices() can reconfigure the audio
+            // session again once the recording session has fully ended.
+            _isRecordingSession = false;
+        }
     }
 
     public async Task<byte[]> GetCurrentChunkAsync()
@@ -201,9 +243,21 @@ public sealed class AudioService : IAudioService, IDisposable
             return Array.Empty<byte>();
 
         // Stop the current recording to capture the audio so far.
-        var audioSource = await _recorder.StopAsync();
+        // Wrap in try/catch: if the recorder was interrupted between the IsRecording check
+        // above and the StopAsync call (a very narrow race), StopAsync may throw.  We still
+        // need to restart the recorder below so that the recording session continues.
+        IAudioSource? audioSource = null;
+        try
+        {
+            audioSource = await _recorder.StopAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[AudioService] GetCurrentChunkAsync StopAsync failed: {ex}");
+        }
 
-        // Immediately start a fresh recording segment using the selected device.
+        // Always start a fresh recording segment, even if capturing the current chunk
+        // failed, so that the session continues rather than silently going quiet.
         ApplyPreferredInputDevice();
         _recorder = _audioManager.CreateRecorder();
         await _recorder.StartAsync();
