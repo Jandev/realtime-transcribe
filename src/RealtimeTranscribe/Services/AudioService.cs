@@ -65,16 +65,26 @@ public sealed class AudioService : IAudioService, IDisposable
     public IReadOnlyList<AudioDevice> GetInputDevices()
     {
 #if MACCATALYST
-        // Activate the audio session so the OS grants microphone access before we query
-        // CoreAudio.  Without this, kAudioDevicePropertyStreams with input scope returns
-        // no streams (permission has not yet been acknowledged by the OS) and the device
-        // list is empty.  The PlayAndRecord category also ensures that Bluetooth and
-        // Continuity devices are included in the HAL device list.
         var session = AVAudioSession.SharedInstance();
-        session.SetCategory(AVAudioSessionCategory.PlayAndRecord,
-            AVAudioSessionCategoryOptions.AllowBluetooth | AVAudioSessionCategoryOptions.AllowBluetoothA2DP,
-            out _);
-        session.SetActive(true, out _);
+        if (!IsRecording)
+        {
+            // Activate the audio session so the OS grants microphone access before we
+            // query CoreAudio.  Without this, kAudioDevicePropertyStreams with input scope
+            // returns no streams (permission has not yet been acknowledged by the OS) and
+            // the device list is empty.  The PlayAndRecord category also ensures that
+            // Bluetooth and Continuity devices are included in the HAL device list.
+            //
+            // IMPORTANT: Skip this when recording is active.  Calling SetCategory or
+            // SetActive while AVAudioRecorder is running can interrupt the active
+            // recording, causing AVAudioRecorder's FinishedRecording delegate to fire
+            // prematurely.  When the user later stops recording our StopAsync() call
+            // triggers FinishedRecording a second time, which calls SetResult() on an
+            // already-completed TaskCompletionSource and crashes the app.
+            session.SetCategory(AVAudioSessionCategory.PlayAndRecord,
+                AVAudioSessionCategoryOptions.AllowBluetooth | AVAudioSessionCategoryOptions.AllowBluetoothA2DP,
+                out _);
+            session.SetActive(true, out _);
+        }
         // Use the CoreAudio HAL (not AVAudioSession.AvailableInputs) because AvailableInputs
         // only returns the currently-active port and omits virtual/aggregate drivers such as
         // BlackHole.  The HAL is the authoritative source for ALL devices.
@@ -97,11 +107,17 @@ public sealed class AudioService : IAudioService, IDisposable
         // full set of available input ports: built-in mic, aggregated/virtual devices,
         // Bluetooth, and iPhone via Continuity.
         // Without this, only the currently-active port is returned.
+        //
+        // IMPORTANT: Skip this when recording is active to avoid interrupting the
+        // active AVAudioRecorder (see MacCatalyst note above for the full explanation).
         var session = AVAudioSession.SharedInstance();
-        session.SetCategory(AVAudioSessionCategory.PlayAndRecord,
-            AVAudioSessionCategoryOptions.AllowBluetooth | AVAudioSessionCategoryOptions.AllowBluetoothA2DP,
-            out _);
-        session.SetActive(true, out _);
+        if (!IsRecording)
+        {
+            session.SetCategory(AVAudioSessionCategory.PlayAndRecord,
+                AVAudioSessionCategoryOptions.AllowBluetooth | AVAudioSessionCategoryOptions.AllowBluetoothA2DP,
+                out _);
+            session.SetActive(true, out _);
+        }
         var inputs = session.AvailableInputs;
         if (inputs is { Length: > 0 })
             return inputs.Select(p => new AudioDevice($"{p.PortType}:{p.PortName}", p.PortName)).ToArray();
@@ -192,7 +208,13 @@ public sealed class AudioService : IAudioService, IDisposable
         _recorder = _audioManager.CreateRecorder();
         await _recorder.StartAsync();
 
+        if (audioSource is null)
+            return Array.Empty<byte>();
+
         using var stream = audioSource.GetAudioStream();
+        if (stream is null)
+            return Array.Empty<byte>();
+
         using var ms = new MemoryStream();
         await stream.CopyToAsync(ms);
         return ms.ToArray();
