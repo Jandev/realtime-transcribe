@@ -205,13 +205,19 @@ public partial class MainViewModel : ObservableObject
             var micStatus = await Permissions.RequestAsync<Permissions.Microphone>();
             if (micStatus != PermissionStatus.Granted)
             {
-                await MainThread.InvokeOnMainThreadAsync(() => StatusMessage = "Microphone permission denied.");
+                // Fire-and-forget: never await InvokeOnMainThreadAsync from a Task.Run method.
+                // Awaiting it can cause the TCS to complete synchronously on the main thread,
+                // making subsequent awaits capture NSAsyncSynchronizationContextDispatcher and
+                // trigger the Mono interpreter interp_try_devirt crash (EXC_BAD_ACCESS at 0xa0).
+                MainThread.BeginInvokeOnMainThread(() => StatusMessage = "Microphone permission denied.");
                 return;
             }
 
-            await MainThread.InvokeOnMainThreadAsync(() =>
+            // Clear accumulated state on the background thread (safe: scheduler hasn't started).
+            // Post UI-property resets to the main thread without awaiting.
+            _transcriptSegments.Clear();
+            MainThread.BeginInvokeOnMainThread(() =>
             {
-                _transcriptSegments.Clear();
                 Transcript = string.Empty;
                 DiarizedTranscript = string.Empty;
                 Summary = string.Empty;
@@ -219,7 +225,7 @@ public partial class MainViewModel : ObservableObject
 
             await _audioService.StartRecordingAsync();
 
-            await MainThread.InvokeOnMainThreadAsync(() =>
+            MainThread.BeginInvokeOnMainThread(() =>
             {
                 IsRecording = true;
                 StatusMessage = "🔴 Recording…";
@@ -232,7 +238,7 @@ public partial class MainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            await MainThread.InvokeOnMainThreadAsync(() => StatusMessage = $"Error starting recording: {ex.Message}");
+            MainThread.BeginInvokeOnMainThread(() => StatusMessage = $"Error starting recording: {ex.Message}");
         }
     }
 
@@ -299,11 +305,12 @@ public partial class MainViewModel : ObservableObject
 
             sb.Append(c);
 
-            // Dispatch the property update via a synchronous lambda.  This avoids
-            // placing an async state machine into InvokeOnMainThreadAsync and keeps
-            // all Task.Delay suspensions on the background thread where they are safe.
+            // Fire-and-forget: never await InvokeOnMainThreadAsync from a Task.Run method.
+            // BeginInvokeOnMainThread posts the update without suspending this loop, so
+            // the state machine stays on the TP Worker and never captures
+            // NSAsyncSynchronizationContextDispatcher as its resumed context.
             var snapshot = sb.ToString();
-            await MainThread.InvokeOnMainThreadAsync(() => { Transcript = snapshot; });
+            MainThread.BeginInvokeOnMainThread(() => { Transcript = snapshot; });
 
             try
             {
@@ -334,13 +341,13 @@ public partial class MainViewModel : ObservableObject
     {
         try
         {
-            await MainThread.InvokeOnMainThreadAsync(() =>
+            MainThread.BeginInvokeOnMainThread(() =>
                 StatusMessage = "⚠️ Audio device disconnected — saving recording…");
             await StopAndProcessAsync();
         }
         catch (Exception ex)
         {
-            await MainThread.InvokeOnMainThreadAsync(() =>
+            MainThread.BeginInvokeOnMainThread(() =>
             {
                 StatusMessage = $"Error handling device disconnection: {ex.Message}";
                 IsProcessing = false;
@@ -366,13 +373,13 @@ public partial class MainViewModel : ObservableObject
     {
         try
         {
-            await MainThread.InvokeOnMainThreadAsync(() =>
+            MainThread.BeginInvokeOnMainThread(() =>
                 StatusMessage = "🔄 Device changed — restarting recording…");
             await StopAndRestartRecordingAsync();
         }
         catch (Exception ex)
         {
-            await MainThread.InvokeOnMainThreadAsync(() =>
+            MainThread.BeginInvokeOnMainThread(() =>
             {
                 StatusMessage = $"Error restarting recording: {ex.Message}";
                 IsRecording = false;
@@ -391,7 +398,7 @@ public partial class MainViewModel : ObservableObject
         // Stop the realtime scheduler.
         _schedulerCts?.Cancel();
 
-        await MainThread.InvokeOnMainThreadAsync(() =>
+        MainThread.BeginInvokeOnMainThread(() =>
             StatusMessage = "🔄 Capturing audio before device switch…");
 
         try
@@ -405,12 +412,12 @@ public partial class MainViewModel : ObservableObject
 
             // Retrieve whatever audio was buffered before the device change.
             var wav = await _audioService.StopRecordingAsync();
-            await MainThread.InvokeOnMainThreadAsync(() => IsRecording = false);
+            MainThread.BeginInvokeOnMainThread(() => IsRecording = false);
 
             if (wav.Length > 0)
             {
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(DeviceSwitchTranscriptionTimeoutSeconds));
-                await MainThread.InvokeOnMainThreadAsync(() =>
+                MainThread.BeginInvokeOnMainThread(() =>
                     StatusMessage = "🔄 Transcribing buffered audio…");
                 var segment = await _transcriptionService.TranscribeAsync(wav, cts.Token);
                 if (!string.IsNullOrEmpty(segment))
@@ -433,7 +440,7 @@ public partial class MainViewModel : ObservableObject
         // Restart recording on the newly-selected device.
         await _audioService.StartRecordingAsync();
 
-        await MainThread.InvokeOnMainThreadAsync(() =>
+        MainThread.BeginInvokeOnMainThread(() =>
         {
             IsRecording = true;
             StatusMessage = "🔴 Recording…";
@@ -448,7 +455,7 @@ public partial class MainViewModel : ObservableObject
         // Stop the realtime scheduler immediately.
         _schedulerCts?.Cancel();
 
-        await MainThread.InvokeOnMainThreadAsync(() =>
+        MainThread.BeginInvokeOnMainThread(() =>
         {
             IsRecording = false;
             IsProcessing = true;
@@ -472,27 +479,27 @@ public partial class MainViewModel : ObservableObject
 
             if (wav.Length == 0 && _transcriptSegments.Count == 0)
             {
-                await MainThread.InvokeOnMainThreadAsync(() => StatusMessage = "No audio captured.");
+                MainThread.BeginInvokeOnMainThread(() => StatusMessage = "No audio captured.");
                 return;
             }
 
             // Transcribe the final audio segment (if any).
             if (wav.Length > 0)
             {
-                await MainThread.InvokeOnMainThreadAsync(() => StatusMessage = "Transcribing final segment…");
+                MainThread.BeginInvokeOnMainThread(() => StatusMessage = "Transcribing final segment…");
                 var finalSegment = await _transcriptionService.TranscribeAsync(wav, _cts.Token);
                 if (!string.IsNullOrEmpty(finalSegment))
                     _transcriptSegments.Add(finalSegment);
             }
 
             var fullTranscript = string.Join(" ", _transcriptSegments);
-            await MainThread.InvokeOnMainThreadAsync(() => Transcript = fullTranscript);
+            MainThread.BeginInvokeOnMainThread(() => Transcript = fullTranscript);
 
-            await MainThread.InvokeOnMainThreadAsync(() => StatusMessage = "Identifying speakers…");
+            MainThread.BeginInvokeOnMainThread(() => StatusMessage = "Identifying speakers…");
             var diarized = await _transcriptionService.DiarizeAsync(fullTranscript, _cts.Token);
-            await MainThread.InvokeOnMainThreadAsync(() => DiarizedTranscript = diarized);
+            MainThread.BeginInvokeOnMainThread(() => DiarizedTranscript = diarized);
 
-            await MainThread.InvokeOnMainThreadAsync(() => StatusMessage = "Summarising…");
+            MainThread.BeginInvokeOnMainThread(() => StatusMessage = "Summarising…");
             await _transcriptionService.SummarizeStreamingAsync(
                 fullTranscript,
                 // Synchronous (non-async) lambda: no anonymous async state machine is created,
@@ -508,19 +515,19 @@ public partial class MainViewModel : ObservableObject
             if (!string.IsNullOrEmpty(Summary))
                 await _fileStorageService.SaveSummaryAsync(Summary, DateTime.Now, _cts.Token);
 
-            await MainThread.InvokeOnMainThreadAsync(() => StatusMessage = "Done ✓");
+            MainThread.BeginInvokeOnMainThread(() => StatusMessage = "Done ✓");
         }
         catch (OperationCanceledException)
         {
-            await MainThread.InvokeOnMainThreadAsync(() => StatusMessage = "Cancelled.");
+            MainThread.BeginInvokeOnMainThread(() => StatusMessage = "Cancelled.");
         }
         catch (Exception ex)
         {
-            await MainThread.InvokeOnMainThreadAsync(() => StatusMessage = $"Error: {ex.Message}");
+            MainThread.BeginInvokeOnMainThread(() => StatusMessage = $"Error: {ex.Message}");
         }
         finally
         {
-            await MainThread.InvokeOnMainThreadAsync(() => IsProcessing = false);
+            MainThread.BeginInvokeOnMainThread(() => IsProcessing = false);
             _schedulerCts?.Dispose();
             _schedulerCts = null;
             _cts?.Dispose();
