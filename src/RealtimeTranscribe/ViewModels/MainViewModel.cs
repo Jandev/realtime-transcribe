@@ -253,39 +253,44 @@ public partial class MainViewModel : ObservableObject
 
     /// <summary>
     /// Appends <paramref name="segment"/> to <see cref="Transcript"/> one character at a time
-    /// to produce a visually fluent "streaming" effect.  Must be called from a background thread;
-    /// all UI updates are dispatched to the main thread.  Respects <paramref name="ct"/> on every
+    /// to produce a visually fluent "streaming" effect.  All UI updates are dispatched to the
+    /// main thread via a simple synchronous lambda.  Respects <paramref name="ct"/> on every
     /// inter-character delay so cancellation stops the animation immediately.
     /// </summary>
+    /// <remarks>
+    /// The delay is intentionally kept outside of <see cref="MainThread.InvokeOnMainThreadAsync"/>
+    /// so that no <c>async</c> lambda with an internal <c>await</c> is ever dispatched through
+    /// Xamarin/MAUI's <c>NSAsyncSynchronizationContextDispatcher</c>.  That pattern can cause a
+    /// native <c>KERN_INVALID_ADDRESS</c> crash in the Mono interpreter on first-time JIT
+    /// compilation of the anonymous state machine.
+    /// </remarks>
     private async Task AppendToTranscriptAsync(string segment, CancellationToken ct)
     {
         if (string.IsNullOrEmpty(segment))
             return;
 
-        await MainThread.InvokeOnMainThreadAsync(async () =>
+        var prefix = string.IsNullOrEmpty(Transcript) ? string.Empty : " ";
+        var textToAppend = prefix + segment;
+        var sb = new StringBuilder(Transcript);
+
+        foreach (char c in textToAppend)
         {
-            var prefix = string.IsNullOrEmpty(Transcript) ? string.Empty : " ";
-            var textToAppend = prefix + segment;
-            var sb = new StringBuilder(Transcript);
+            if (ct.IsCancellationRequested)
+                return;
 
-            foreach (char c in textToAppend)
+            sb.Append(c);
+            var current = sb.ToString();
+            await MainThread.InvokeOnMainThreadAsync(() => Transcript = current);
+
+            try
             {
-                if (ct.IsCancellationRequested)
-                    return;
-
-                sb.Append(c);
-                Transcript = sb.ToString();
-
-                try
-                {
-                    await Task.Delay(TranscriptAnimationDelayMs, ct);
-                }
-                catch (OperationCanceledException)
-                {
-                    return;
-                }
+                await Task.Delay(TranscriptAnimationDelayMs, ct);
             }
-        });
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+        }
     }
 
     /// <summary>

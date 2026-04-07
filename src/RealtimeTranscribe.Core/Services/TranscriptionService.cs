@@ -74,7 +74,7 @@ public class TranscriptionService : ITranscriptionService
         var audioClient = client.GetAudioClient(_settings.WhisperDeploymentName);
 
         using var audioStream = new MemoryStream(wavBytes);
-        var result = await audioClient.TranscribeAudioAsync(audioStream, "audio.wav", cancellationToken: cancellationToken);
+        var result = await audioClient.TranscribeAudioAsync(audioStream, "audio.wav", cancellationToken: cancellationToken).ConfigureAwait(false);
 
         return result.Value.Text;
     }
@@ -94,7 +94,7 @@ public class TranscriptionService : ITranscriptionService
             new UserChatMessage($"Transcript:\n\n{transcript}")
         };
 
-        var response = await chatClient.CompleteChatAsync(messages, cancellationToken: cancellationToken);
+        var response = await chatClient.CompleteChatAsync(messages, cancellationToken: cancellationToken).ConfigureAwait(false);
         return response.Value.Content[0].Text;
     }
 
@@ -113,7 +113,7 @@ public class TranscriptionService : ITranscriptionService
             new UserChatMessage($"Transcript:\n\n{transcript}")
         };
 
-        var response = await chatClient.CompleteChatAsync(messages, cancellationToken: cancellationToken);
+        var response = await chatClient.CompleteChatAsync(messages, cancellationToken: cancellationToken).ConfigureAwait(false);
         return response.Value.Content[0].Text;
     }
 
@@ -134,7 +134,7 @@ public class TranscriptionService : ITranscriptionService
 
         var streaming = chatClient.CompleteChatStreamingAsync(messages, cancellationToken: cancellationToken);
 
-        await foreach (var update in streaming.WithCancellation(cancellationToken))
+        await foreach (var update in streaming.WithCancellation(cancellationToken).ConfigureAwait(false))
         {
             foreach (var part in update.ContentUpdate)
             {
