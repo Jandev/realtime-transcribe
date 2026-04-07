@@ -361,24 +361,29 @@ public partial class MainViewModel : ObservableObject
         {
             if (_schedulerTask is not null)
             {
-                try { await _schedulerTask; }
+                // ConfigureAwait(false) here (and on every subsequent await) moves all
+                // continuations of this state machine off the main thread.  Without it,
+                // NSAsyncSynchronizationContextDispatcher dispatches them back to the main
+                // thread, where the Mono interpreter can crash during first-time JIT
+                // compilation of the state machine's MoveNext method.
+                try { await _schedulerTask.ConfigureAwait(false); }
                 catch (OperationCanceledException) { }
                 _schedulerTask = null;
             }
 
             // Retrieve whatever audio was buffered before the device change.
-            var wav = await _audioService.StopRecordingAsync();
-            IsRecording = false;
+            var wav = await _audioService.StopRecordingAsync().ConfigureAwait(false);
+            await MainThread.InvokeOnMainThreadAsync(() => IsRecording = false).ConfigureAwait(false);
 
             if (wav.Length > 0)
             {
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(DeviceSwitchTranscriptionTimeoutSeconds));
-                StatusMessage = "🔄 Transcribing buffered audio…";
-                var segment = await _transcriptionService.TranscribeAsync(wav, cts.Token);
+                await MainThread.InvokeOnMainThreadAsync(() => StatusMessage = "🔄 Transcribing buffered audio…").ConfigureAwait(false);
+                var segment = await _transcriptionService.TranscribeAsync(wav, cts.Token).ConfigureAwait(false);
                 if (!string.IsNullOrEmpty(segment))
                 {
                     _transcriptSegments.Add(segment);
-                    await AppendToTranscriptAsync(segment, cts.Token);
+                    await AppendToTranscriptAsync(segment, cts.Token).ConfigureAwait(false);
                 }
             }
         }
@@ -393,9 +398,8 @@ public partial class MainViewModel : ObservableObject
         }
 
         // Restart recording on the newly-selected device.
-        await _audioService.StartRecordingAsync();
-        IsRecording = true;
-        StatusMessage = "🔴 Recording…";
+        await _audioService.StartRecordingAsync().ConfigureAwait(false);
+        await MainThread.InvokeOnMainThreadAsync(() => { IsRecording = true; StatusMessage = "🔴 Recording…"; }).ConfigureAwait(false);
 
         _schedulerCts = new CancellationTokenSource();
         _schedulerTask = RunSchedulerAsync(_schedulerCts.Token);
@@ -415,61 +419,70 @@ public partial class MainViewModel : ObservableObject
         try
         {
             // Wait for the scheduler loop to exit cleanly.
+            // ConfigureAwait(false) here (and on every subsequent await) moves all
+            // continuations of this state machine off the main thread.  Without it,
+            // NSAsyncSynchronizationContextDispatcher dispatches them back to the main
+            // thread, where the Mono interpreter can crash during first-time JIT
+            // compilation of the state machine's MoveNext method (KERN_INVALID_ADDRESS
+            // in mono_class_get_virtual_method / interp_try_devirt).
             if (_schedulerTask is not null)
             {
-                try { await _schedulerTask; }
+                try { await _schedulerTask.ConfigureAwait(false); }
                 catch (OperationCanceledException) { }
                 _schedulerTask = null;
             }
 
             // Capture whatever audio remains after the last scheduled chunk.
-            var wav = await _audioService.StopRecordingAsync();
+            var wav = await _audioService.StopRecordingAsync().ConfigureAwait(false);
 
             if (wav.Length == 0 && _transcriptSegments.Count == 0)
             {
-                StatusMessage = "No audio captured.";
+                await MainThread.InvokeOnMainThreadAsync(() => StatusMessage = "No audio captured.").ConfigureAwait(false);
                 return;
             }
 
             // Transcribe the final audio segment (if any).
             if (wav.Length > 0)
             {
-                StatusMessage = "Transcribing final segment…";
-                var finalSegment = await _transcriptionService.TranscribeAsync(wav, _cts.Token);
+                await MainThread.InvokeOnMainThreadAsync(() => StatusMessage = "Transcribing final segment…").ConfigureAwait(false);
+                var finalSegment = await _transcriptionService.TranscribeAsync(wav, _cts.Token).ConfigureAwait(false);
                 if (!string.IsNullOrEmpty(finalSegment))
                     _transcriptSegments.Add(finalSegment);
             }
 
-            Transcript = string.Join(" ", _transcriptSegments);
+            var transcript = string.Join(" ", _transcriptSegments);
+            await MainThread.InvokeOnMainThreadAsync(() => Transcript = transcript).ConfigureAwait(false);
 
-            StatusMessage = "Identifying speakers…";
-            DiarizedTranscript = await _transcriptionService.DiarizeAsync(Transcript, _cts.Token);
+            await MainThread.InvokeOnMainThreadAsync(() => StatusMessage = "Identifying speakers…").ConfigureAwait(false);
+            var diarized = await _transcriptionService.DiarizeAsync(transcript, _cts.Token).ConfigureAwait(false);
+            await MainThread.InvokeOnMainThreadAsync(() => DiarizedTranscript = diarized).ConfigureAwait(false);
 
-            StatusMessage = "Summarising…";
+            await MainThread.InvokeOnMainThreadAsync(() => StatusMessage = "Summarising…").ConfigureAwait(false);
             await _transcriptionService.SummarizeStreamingAsync(
-                Transcript,
+                transcript,
                 onToken: async token =>
                 {
-                    await MainThread.InvokeOnMainThreadAsync(() => Summary += token);
+                    await MainThread.InvokeOnMainThreadAsync(() => Summary += token).ConfigureAwait(false);
                 },
-                _cts.Token);
+                _cts.Token).ConfigureAwait(false);
 
             if (!string.IsNullOrEmpty(Summary))
-                await _fileStorageService.SaveSummaryAsync(Summary, DateTime.Now, _cts.Token);
+                await _fileStorageService.SaveSummaryAsync(Summary, DateTime.Now, _cts.Token).ConfigureAwait(false);
 
-            StatusMessage = "Done ✓";
+            await MainThread.InvokeOnMainThreadAsync(() => StatusMessage = "Done ✓").ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
-            StatusMessage = "Cancelled.";
+            await MainThread.InvokeOnMainThreadAsync(() => StatusMessage = "Cancelled.").ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Error: {ex.Message}";
+            var message = ex.Message;
+            await MainThread.InvokeOnMainThreadAsync(() => StatusMessage = $"Error: {message}").ConfigureAwait(false);
         }
         finally
         {
-            IsProcessing = false;
+            await MainThread.InvokeOnMainThreadAsync(() => IsProcessing = false).ConfigureAwait(false);
             _schedulerCts?.Dispose();
             _schedulerCts = null;
             _cts?.Dispose();
