@@ -246,14 +246,19 @@ public partial class MainViewModel : ObservableObject
     {
         await _transcriptionScheduler.RunAsync(
             audioChunkProvider: ct => _audioService.GetCurrentChunkAsync(),
-            onSegment: async segment =>
+            // Synchronous (non-async) lambda: no anonymous async state machine is created,
+            // so the Mono interpreter's interp_try_devirt never JIT-compiles an anonymous
+            // MoveNext() that would dereference a null class-vtable pointer at 0xa0.
+            onSegment: segment =>
             {
                 _transcriptSegments.Add(segment);
-
-                await AppendToTranscriptAsync(segment, cancellationToken);
-
-                await MainThread.InvokeOnMainThreadAsync(() =>
-                    StatusMessage = $"🔴 Recording… (updated {DateTime.Now:HH:mm:ss})");
+                var snapshot = string.Join(" ", _transcriptSegments);
+                MainThread.BeginInvokeOnMainThread(() =>
+                {
+                    Transcript = snapshot;
+                    StatusMessage = $"🔴 Recording… (updated {DateTime.Now:HH:mm:ss})";
+                });
+                return Task.CompletedTask;
             },
             cancellationToken: cancellationToken);
     }
@@ -314,33 +319,33 @@ public partial class MainViewModel : ObservableObject
     /// <summary>
     /// Called when the audio input device becomes unavailable during an active recording
     /// (e.g. AirPods placed back in their case). Starts the stop-and-process flow on the
-    /// thread pool to avoid async continuations going through
-    /// NSAsyncSynchronizationContextDispatcher (Mono MacCatalyst bug).
+    /// thread pool via a named async method to avoid anonymous async state machines that
+    /// trigger the Mono interpreter's interp_try_devirt crash (null class-vtable at 0xa0).
     /// </summary>
     private void OnRecordingInterrupted(object? sender, EventArgs e)
     {
         if (!IsRecording)
             return;
 
-        // Task.Run ensures the async body and all its continuations run on the thread pool,
-        // not via NSAsyncSynchronizationContextDispatcher on the main thread.
-        _ = Task.Run(async () =>
+        _ = Task.Run(RunRecordingInterruptedAsync);
+    }
+
+    private async Task RunRecordingInterruptedAsync()
+    {
+        try
         {
-            try
+            await MainThread.InvokeOnMainThreadAsync(() =>
+                StatusMessage = "⚠️ Audio device disconnected — saving recording…");
+            await StopAndProcessAsync();
+        }
+        catch (Exception ex)
+        {
+            await MainThread.InvokeOnMainThreadAsync(() =>
             {
-                await MainThread.InvokeOnMainThreadAsync(() =>
-                    StatusMessage = "⚠️ Audio device disconnected — saving recording…");
-                await StopAndProcessAsync();
-            }
-            catch (Exception ex)
-            {
-                await MainThread.InvokeOnMainThreadAsync(() =>
-                {
-                    StatusMessage = $"Error handling device disconnection: {ex.Message}";
-                    IsProcessing = false;
-                });
-            }
-        });
+                StatusMessage = $"Error handling device disconnection: {ex.Message}";
+                IsProcessing = false;
+            });
+        }
     }
 
     /// <summary>
@@ -354,25 +359,25 @@ public partial class MainViewModel : ObservableObject
         if (!IsRecording)
             return;
 
-        // Task.Run ensures the async body and all its continuations run on the thread pool,
-        // not via NSAsyncSynchronizationContextDispatcher on the main thread.
-        _ = Task.Run(async () =>
+        _ = Task.Run(RunDeviceSelectionChangedAsync);
+    }
+
+    private async Task RunDeviceSelectionChangedAsync()
+    {
+        try
         {
-            try
+            await MainThread.InvokeOnMainThreadAsync(() =>
+                StatusMessage = "🔄 Device changed — restarting recording…");
+            await StopAndRestartRecordingAsync();
+        }
+        catch (Exception ex)
+        {
+            await MainThread.InvokeOnMainThreadAsync(() =>
             {
-                await MainThread.InvokeOnMainThreadAsync(() =>
-                    StatusMessage = "🔄 Device changed — restarting recording…");
-                await StopAndRestartRecordingAsync();
-            }
-            catch (Exception ex)
-            {
-                await MainThread.InvokeOnMainThreadAsync(() =>
-                {
-                    StatusMessage = $"Error restarting recording: {ex.Message}";
-                    IsRecording = false;
-                });
-            }
-        });
+                StatusMessage = $"Error restarting recording: {ex.Message}";
+                IsRecording = false;
+            });
+        }
     }
 
     /// <summary>
@@ -490,9 +495,13 @@ public partial class MainViewModel : ObservableObject
             await MainThread.InvokeOnMainThreadAsync(() => StatusMessage = "Summarising…");
             await _transcriptionService.SummarizeStreamingAsync(
                 fullTranscript,
-                onToken: async token =>
+                // Synchronous (non-async) lambda: no anonymous async state machine is created,
+                // so the Mono interpreter's interp_try_devirt never JIT-compiles an anonymous
+                // MoveNext() that would dereference a null class-vtable pointer at 0xa0.
+                onToken: token =>
                 {
-                    await MainThread.InvokeOnMainThreadAsync(() => Summary += token);
+                    MainThread.BeginInvokeOnMainThread(() => Summary += token);
+                    return Task.CompletedTask;
                 },
                 _cts.Token);
 
