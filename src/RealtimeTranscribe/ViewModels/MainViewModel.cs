@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using RealtimeTranscribe.Services;
+using System.Runtime.CompilerServices;
 using System.Text;
 
 namespace RealtimeTranscribe.ViewModels;
@@ -31,6 +32,25 @@ public partial class MainViewModel : ObservableObject
         IMarkdownProcessor markdownProcessor,
         IFileStorageService fileStorageService)
     {
+        // Force Mono's interpreter to initialize the generic TaskAwaiter<T> class vtables
+        // for every T used in background-thread async state machines, on the main thread,
+        // before any Task.Run call can trigger the same JIT compilation on a TP worker.
+        //
+        // Background: When an async method's MoveNext() is JIT-compiled for the first time
+        // by the Mono interpreter, interp_try_devirt processes every
+        // `constrained. TaskAwaiter<T> callvirt ICriticalNotifyCompletion.UnsafeOnCompleted`
+        // instruction (emitted by the C# compiler for every await suspension point) and calls
+        // mono_class_get_virtual_method(TaskAwaiter<T>, UnsafeOnCompleted).  That function
+        // accesses the MonoClass vtable pointer at offset +0xa0.  If TaskAwaiter<T> has never
+        // been used before, the vtable is null and the dereference crashes with
+        // EXC_BAD_ACCESS SIGSEGV at address 0x00000000000000a0.
+        //
+        // StopAndProcessAsync and RunAsync are always invoked via Task.Run, so their
+        // MoveNext() methods are always first JIT-compiled on a .NET TP Worker thread.
+        // Running this warm-up in the constructor (on the main thread) ensures the vtables
+        // are fully set up before any background thread reaches interp_try_devirt for them.
+        WarmUpInterpreterAsync().GetAwaiter().GetResult();
+
         _audioService = audioService;
         _transcriptionService = transcriptionService;
         _transcriptionScheduler = transcriptionScheduler;
@@ -46,6 +66,41 @@ public partial class MainViewModel : ObservableObject
         // Restore persisted font size, clamping any out-of-range value to a safe default.
         _contentFontSize = TextScaleService.Restore(
             Preferences.Default.Get(TextScaleService.PreferenceKey, TextScaleService.Default));
+    }
+
+    /// <summary>
+    /// Warms up the Mono interpreter's generic async infrastructure by forcing JIT compilation
+    /// (and the associated <c>interp_try_devirt</c> vtable-initialization path) for
+    /// <see cref="System.Runtime.CompilerServices.TaskAwaiter{T}"/> on the calling thread.
+    /// Must be called on the main thread from the constructor — before any
+    /// <see cref="Task.Run"/> launches a background thread that could race on the same
+    /// vtable initialization.
+    /// <para>
+    /// All awaited tasks are already completed (<see cref="Task.FromResult{TResult}"/> /
+    /// <see cref="Task.CompletedTask"/>), so the method returns synchronously and
+    /// <c>.GetAwaiter().GetResult()</c> never deadlocks.
+    /// </para>
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static async Task WarmUpInterpreterAsync()
+    {
+        // Each await forces Mono to JIT-compile this state machine's MoveNext() up to
+        // (at least) the suspension point for that T, which runs interp_try_devirt for
+        // constrained. TaskAwaiter<T> callvirt ICriticalNotifyCompletion.UnsafeOnCompleted
+        // and initialises the MonoClass vtable for TaskAwaiter<T>.
+
+        // byte[] — Task<byte[]> returned by IAudioService.StopRecordingAsync() and
+        //          GetCurrentChunkAsync(), and passed into ITranscriptionService.TranscribeAsync().
+        _ = await Task.FromResult(Array.Empty<byte>());
+
+        // string — Task<string> returned by ITranscriptionService.TranscribeAsync() and
+        //          DiarizeAsync().
+        _ = await Task.FromResult(string.Empty);
+
+        // non-generic — Task returned by IAudioService.StartRecordingAsync(),
+        //               ITranscriptionService.SummarizeStreamingAsync(),
+        //               IFileStorageService.SaveSummaryAsync(), and Task.Delay().
+        await Task.CompletedTask;
     }
 
     [ObservableProperty]
