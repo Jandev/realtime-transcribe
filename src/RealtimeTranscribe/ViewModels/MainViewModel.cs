@@ -57,6 +57,23 @@ public partial class MainViewModel : ObservableObject
         _markdownProcessor = markdownProcessor;
         _fileStorageService = fileStorageService;
 
+        // Force Mono to JIT-compile the TranscriptionService async state machines on the
+        // main thread.  Each call short-circuits via an early-return guard so no real API
+        // call is ever made, but the full MoveNext() body is compiled — including the
+        // `await foreach` path in SummarizeStreamingAsync that uses ValueTaskAwaiter<bool>
+        // (MoveNextAsync) and ValueTaskAwaiter (DisposeAsync), and the Azure SDK await
+        // paths in TranscribeAsync / DiarizeAsync.  Without this pre-compilation the first
+        // use of those methods on a background TP Worker triggers interp_try_devirt for a
+        // class whose vtable pointer is still null, causing EXC_BAD_ACCESS at 0xa0.
+        try
+        {
+            WarmUpTranscriptionServiceMethods(_transcriptionService);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[MainViewModel] WarmUpTranscriptionServiceMethods failed: {ex}");
+        }
+
         // React when a Bluetooth / wireless input device disconnects mid-recording.
         _audioService.RecordingInterrupted += OnRecordingInterrupted;
 
@@ -70,37 +87,81 @@ public partial class MainViewModel : ObservableObject
 
     /// <summary>
     /// Warms up the Mono interpreter's generic async infrastructure by forcing JIT compilation
-    /// (and the associated <c>interp_try_devirt</c> vtable-initialization path) for
-    /// <see cref="System.Runtime.CompilerServices.TaskAwaiter{T}"/> on the calling thread.
+    /// (and the associated <c>interp_try_devirt</c> vtable-initialization path) for every
+    /// awaiter struct used in background-thread async state machines, on the calling thread.
     /// Must be called on the main thread from the constructor — before any
     /// <see cref="Task.Run"/> launches a background thread that could race on the same
     /// vtable initialization.
     /// <para>
-    /// All awaited tasks are already completed (<see cref="Task.FromResult{TResult}"/> /
-    /// <see cref="Task.CompletedTask"/>), so the method returns synchronously and
+    /// All awaited values are already completed, so the method returns synchronously and
     /// <c>.GetAwaiter().GetResult()</c> never deadlocks.
     /// </para>
     /// </summary>
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static async Task WarmUpInterpreterAsync()
     {
-        // Each await forces Mono to JIT-compile this state machine's MoveNext() up to
-        // (at least) the suspension point for that T, which runs interp_try_devirt for
-        // constrained. TaskAwaiter<T> callvirt ICriticalNotifyCompletion.UnsafeOnCompleted
-        // and initialises the MonoClass vtable for TaskAwaiter<T>.
+        // Each await causes Mono to JIT-compile this MoveNext() through the suspension path
+        // for that awaiter type, running interp_try_devirt for the
+        //   constrained. TAwaiter callvirt ICriticalNotifyCompletion.UnsafeOnCompleted
+        // instruction and initialising the MonoClass vtable for that struct.
 
-        // byte[] — Task<byte[]> returned by IAudioService.StopRecordingAsync() and
-        //          GetCurrentChunkAsync(), and passed into ITranscriptionService.TranscribeAsync().
+        // TaskAwaiter<byte[]> — Task<byte[]> returned by IAudioService.StopRecordingAsync()
+        //                       and GetCurrentChunkAsync().
         _ = await Task.FromResult(Array.Empty<byte>());
 
-        // string — Task<string> returned by ITranscriptionService.TranscribeAsync() and
-        //          DiarizeAsync().
+        // TaskAwaiter<string> — Task<string> returned by ITranscriptionService.TranscribeAsync()
+        //                       and DiarizeAsync().
         _ = await Task.FromResult(string.Empty);
 
-        // non-generic — Task returned by IAudioService.StartRecordingAsync(),
-        //               ITranscriptionService.SummarizeStreamingAsync(),
-        //               IFileStorageService.SaveSummaryAsync(), and Task.Delay().
+        // TaskAwaiter (non-generic) — Task returned by IAudioService.StartRecordingAsync(),
+        //                             SummarizeStreamingAsync(), SaveSummaryAsync(), Task.Delay().
         await Task.CompletedTask;
+
+        // TaskAwaiter<PermissionStatus> — Task<PermissionStatus> returned by
+        //                                 Permissions.RequestAsync<Permissions.Microphone>()
+        //                                 in StartRecordingAsync.  PermissionStatus is an enum
+        //                                 (value type) so its vtable is NOT shared with the
+        //                                 reference-type instantiations above.
+        _ = await Task.FromResult(PermissionStatus.Granted);
+
+        // ValueTaskAwaiter<bool> — ValueTask<bool> returned by IAsyncEnumerator.MoveNextAsync()
+        //                          inside the `await foreach` loop in SummarizeStreamingAsync.
+        _ = await new ValueTask<bool>(false);
+
+        // ValueTaskAwaiter (non-generic) — ValueTask returned by IAsyncDisposable.DisposeAsync()
+        //                                  at the end of the `await foreach` in SummarizeStreamingAsync.
+        await new ValueTask();
+    }
+
+    /// <summary>
+    /// Forces Mono to JIT-compile the <see cref="ITranscriptionService"/> async state machines
+    /// on the calling (main) thread by invoking each method with inputs that trigger an
+    /// early guard return — no real API calls are made.
+    /// <para>
+    /// Without this, the first real call from a background TP Worker triggers
+    /// <c>mono_interp_transform_method</c> for those state machines on that worker thread.
+    /// The <c>interp_try_devirt</c> pass then calls <c>mono_class_get_virtual_method</c> for
+    /// awaiter types (e.g. <c>ValueTaskAwaiter&lt;bool&gt;</c> from the Azure SDK streaming
+    /// enumerator, or SDK-specific <c>TaskAwaiter&lt;ClientResult&lt;T&gt;&gt;</c>) whose
+    /// <c>MonoClass</c> vtable pointer is still null at that point, causing
+    /// <c>EXC_BAD_ACCESS SIGSEGV</c> at address <c>0x00000000000000a0</c>.
+    /// </para>
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void WarmUpTranscriptionServiceMethods(ITranscriptionService transcriptionService)
+    {
+        // TranscribeAsync: guard `if (wavBytes.Length <= MinAudioDataBytes) return string.Empty`
+        // fires before the `await audioClient.TranscribeAudioAsync(...)` line, so no network
+        // call is made, but MoveNext() — including all Azure SDK await paths — is compiled.
+        transcriptionService.TranscribeAsync(Array.Empty<byte>(), default).GetAwaiter().GetResult();
+
+        // DiarizeAsync: guard `if (string.IsNullOrWhiteSpace(transcript)) return string.Empty`
+        // fires before `await chatClient.CompleteChatAsync(...)`.
+        transcriptionService.DiarizeAsync(string.Empty, default).GetAwaiter().GetResult();
+
+        // SummarizeStreamingAsync: guard `if (string.IsNullOrWhiteSpace(transcript)) return`
+        // fires before the `await foreach` loop that uses ValueTaskAwaiter<bool> / ValueTaskAwaiter.
+        transcriptionService.SummarizeStreamingAsync(string.Empty, _ => Task.CompletedTask, default).GetAwaiter().GetResult();
     }
 
     [ObservableProperty]
