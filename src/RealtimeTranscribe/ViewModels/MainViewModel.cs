@@ -32,23 +32,28 @@ public partial class MainViewModel : ObservableObject
         IMarkdownProcessor markdownProcessor,
         IFileStorageService fileStorageService)
     {
-        // Force Mono's interpreter to initialize the generic TaskAwaiter<T> class vtables
-        // for every T used in background-thread async state machines, on the main thread,
-        // before any Task.Run call can trigger the same JIT compilation on a TP worker.
+        // ── Step 1: Force Mono to create runtime vtables for every awaiter struct ──
         //
-        // Background: When an async method's MoveNext() is JIT-compiled for the first time
-        // by the Mono interpreter, interp_try_devirt processes every
-        // `constrained. TaskAwaiter<T> callvirt ICriticalNotifyCompletion.UnsafeOnCompleted`
-        // instruction (emitted by the C# compiler for every await suspension point) and calls
-        // mono_class_get_virtual_method(TaskAwaiter<T>, UnsafeOnCompleted).  That function
-        // accesses the MonoClass vtable pointer at offset +0xa0.  If TaskAwaiter<T> has never
-        // been used before, the vtable is null and the dereference crashes with
-        // EXC_BAD_ACCESS SIGSEGV at address 0x00000000000000a0.
+        // The Mono interpreter's interp_try_devirt function dereferences the MonoClass
+        // vtable pointer (at offset +0xa0) when devirtualising
+        //   constrained. TAwaiter callvirt ICriticalNotifyCompletion.UnsafeOnCompleted
+        // during first-time JIT compilation of any async state machine's MoveNext().
+        // If TAwaiter's MonoClass has never been loaded, the vtable pointer is null and
+        // the dereference causes EXC_BAD_ACCESS SIGSEGV at address 0x00000000000000a0.
         //
-        // StopAndProcessAsync and RunAsync are always invoked via Task.Run, so their
-        // MoveNext() methods are always first JIT-compiled on a .NET TP Worker thread.
-        // Running this warm-up in the constructor (on the main thread) ensures the vtables
-        // are fully set up before any background thread reaches interp_try_devirt for them.
+        // RuntimeHelpers.RunClassConstructor calls mono_class_vtable_checked which creates
+        // the vtable, so this purely synchronous call (no async state machines compiled)
+        // prevents the crash for every type we list here.
+        //
+        // Must run BEFORE WarmUpInterpreterAsync (step 2) because that method's own
+        // MoveNext() compilation walks through interp_try_devirt for its awaiter types.
+        ForceInitializeAwaiterVtables();
+
+        // ── Step 2: Exercise the async state machine compilation path ──
+        //
+        // Await already-completed values of each awaiter type, forcing Mono to JIT-compile
+        // this method's MoveNext() — including every suspension point — on the main thread.
+        // This initialises any remaining interpreter-internal structures beyond the vtable.
         WarmUpInterpreterAsync().GetAwaiter().GetResult();
 
         _audioService = audioService;
@@ -56,6 +61,14 @@ public partial class MainViewModel : ObservableObject
         _transcriptionScheduler = transcriptionScheduler;
         _markdownProcessor = markdownProcessor;
         _fileStorageService = fileStorageService;
+
+        // ── Step 3: Force vtable init for Azure SDK response types ──
+        //
+        // TranscribeAsync / DiarizeAsync / SummarizeStreamingAsync use awaiter types
+        // parameterised on Azure SDK classes (ClientResult<AudioTranscription>, etc.).
+        // These specific MonoClass instantiations need separate vtable initialisation
+        // because Mono does not share vtables across distinct generic instantiations.
+        _transcriptionService.WarmUp();
 
         // React when a Bluetooth / wireless input device disconnects mid-recording.
         _audioService.RecordingInterrupted += OnRecordingInterrupted;
@@ -69,6 +82,51 @@ public partial class MainViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Forces Mono to create runtime vtables (via <c>mono_class_vtable_checked</c>) for every
+    /// generic awaiter struct instantiation used anywhere in the application's or Azure SDK's
+    /// async state machines.  This is a <b>synchronous</b> method with no async/await IL, so
+    /// its own compilation never triggers <c>interp_try_devirt</c> for awaiter types.
+    /// <para>
+    /// Must be the very first warm-up call in the constructor — even before
+    /// <see cref="WarmUpInterpreterAsync"/>, whose MoveNext() compilation walks through
+    /// <c>interp_try_devirt</c> for the awaiter types it references.
+    /// </para>
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.NoOptimization)]
+    private static void ForceInitializeAwaiterVtables()
+    {
+        // ── Standard TaskAwaiter<T> variants ──
+        RuntimeHelpers.RunClassConstructor(typeof(TaskAwaiter).TypeHandle);
+        RuntimeHelpers.RunClassConstructor(typeof(TaskAwaiter<byte[]>).TypeHandle);
+        RuntimeHelpers.RunClassConstructor(typeof(TaskAwaiter<string>).TypeHandle);
+        RuntimeHelpers.RunClassConstructor(typeof(TaskAwaiter<bool>).TypeHandle);
+        RuntimeHelpers.RunClassConstructor(typeof(TaskAwaiter<int>).TypeHandle);
+        RuntimeHelpers.RunClassConstructor(typeof(TaskAwaiter<PermissionStatus>).TypeHandle);
+
+        // ── Standard ValueTaskAwaiter variants ──
+        RuntimeHelpers.RunClassConstructor(typeof(ValueTaskAwaiter).TypeHandle);
+        RuntimeHelpers.RunClassConstructor(typeof(ValueTaskAwaiter<bool>).TypeHandle);
+        RuntimeHelpers.RunClassConstructor(typeof(ValueTaskAwaiter<int>).TypeHandle);
+
+        // ── ConfiguredTaskAwaitable.ConfiguredTaskAwaiter variants ──
+        // Produced by Task.ConfigureAwait(false) — used extensively inside Azure SDK methods.
+        RuntimeHelpers.RunClassConstructor(typeof(ConfiguredTaskAwaitable.ConfiguredTaskAwaiter).TypeHandle);
+        RuntimeHelpers.RunClassConstructor(typeof(ConfiguredTaskAwaitable<string>.ConfiguredTaskAwaiter).TypeHandle);
+        RuntimeHelpers.RunClassConstructor(typeof(ConfiguredTaskAwaitable<byte[]>.ConfiguredTaskAwaiter).TypeHandle);
+        RuntimeHelpers.RunClassConstructor(typeof(ConfiguredTaskAwaitable<bool>.ConfiguredTaskAwaiter).TypeHandle);
+        RuntimeHelpers.RunClassConstructor(typeof(ConfiguredTaskAwaitable<int>.ConfiguredTaskAwaiter).TypeHandle);
+        RuntimeHelpers.RunClassConstructor(typeof(ConfiguredTaskAwaitable<object>.ConfiguredTaskAwaiter).TypeHandle);
+
+        // ── ConfiguredValueTaskAwaitable.ConfiguredValueTaskAwaiter variants ──
+        // Produced by ValueTask.ConfigureAwait(false) — used by the await-foreach pattern
+        // with .WithCancellation() in SummarizeStreamingAsync (MoveNextAsync → bool,
+        // DisposeAsync → non-generic) and internally by Azure SDK streaming methods.
+        RuntimeHelpers.RunClassConstructor(typeof(ConfiguredValueTaskAwaitable.ConfiguredValueTaskAwaiter).TypeHandle);
+        RuntimeHelpers.RunClassConstructor(typeof(ConfiguredValueTaskAwaitable<bool>.ConfiguredValueTaskAwaiter).TypeHandle);
+        RuntimeHelpers.RunClassConstructor(typeof(ConfiguredValueTaskAwaitable<int>.ConfiguredValueTaskAwaiter).TypeHandle);
+    }
+
+    /// <summary>
     /// Warms up the Mono interpreter's generic async infrastructure by forcing JIT compilation
     /// (and the associated <c>interp_try_devirt</c> vtable-initialization path) for every
     /// awaiter struct used in background-thread async state machines, on the calling thread.
@@ -76,6 +134,8 @@ public partial class MainViewModel : ObservableObject
     /// <see cref="Task.Run"/> launches a background thread that could race on the same
     /// vtable initialization.
     /// <para>
+    /// <see cref="ForceInitializeAwaiterVtables"/> must run first to create the vtables;
+    /// this method then exercises the full async state-machine compilation path.
     /// All awaited values are already completed, so the method returns synchronously and
     /// <c>.GetAwaiter().GetResult()</c> never deadlocks.
     /// </para>
@@ -83,37 +143,34 @@ public partial class MainViewModel : ObservableObject
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static async Task WarmUpInterpreterAsync()
     {
-        // Each await causes Mono to JIT-compile this MoveNext() through the suspension path
-        // for that awaiter type, running interp_try_devirt for the
-        //   constrained. TAwaiter callvirt ICriticalNotifyCompletion.UnsafeOnCompleted
-        // instruction and initialising the MonoClass vtable for that struct.
+        // ── TaskAwaiter variants ──
 
-        // TaskAwaiter<byte[]> — Task<byte[]> returned by IAudioService.StopRecordingAsync()
-        //                       and GetCurrentChunkAsync().
-        _ = await Task.FromResult(Array.Empty<byte>());
+        _ = await Task.FromResult(Array.Empty<byte>());     // TaskAwaiter<byte[]>
+        _ = await Task.FromResult(string.Empty);            // TaskAwaiter<string>
+        await Task.CompletedTask;                           // TaskAwaiter (non-generic)
+        _ = await Task.FromResult(PermissionStatus.Granted);// TaskAwaiter<PermissionStatus>
 
-        // TaskAwaiter<string> — Task<string> returned by ITranscriptionService.TranscribeAsync()
-        //                       and DiarizeAsync().
-        _ = await Task.FromResult(string.Empty);
+        // ── ValueTaskAwaiter variants ──
 
-        // TaskAwaiter (non-generic) — Task returned by IAudioService.StartRecordingAsync(),
-        //                             SummarizeStreamingAsync(), SaveSummaryAsync(), Task.Delay().
-        await Task.CompletedTask;
+        _ = await new ValueTask<bool>(false);               // ValueTaskAwaiter<bool>
+        await new ValueTask();                              // ValueTaskAwaiter (non-generic)
 
-        // TaskAwaiter<PermissionStatus> — Task<PermissionStatus> returned by
-        //                                 Permissions.RequestAsync<Permissions.Microphone>()
-        //                                 in StartRecordingAsync.  PermissionStatus is an enum
-        //                                 (value type) so its vtable is NOT shared with the
-        //                                 reference-type instantiations above.
-        _ = await Task.FromResult(PermissionStatus.Granted);
+        // ── ConfiguredTaskAwaiter variants (.ConfigureAwait(false) path) ──
+        // Azure SDK uses ConfigureAwait(false) pervasively; these ensure the
+        // ConfiguredTaskAwaitable.ConfiguredTaskAwaiter vtables are exercised.
 
-        // ValueTaskAwaiter<bool> — ValueTask<bool> returned by IAsyncEnumerator.MoveNextAsync()
-        //                          inside the `await foreach` loop in SummarizeStreamingAsync.
-        _ = await new ValueTask<bool>(false);
+        await Task.CompletedTask.ConfigureAwait(false);                 // ConfiguredTaskAwaiter (non-generic)
+        _ = await Task.FromResult(string.Empty).ConfigureAwait(false);  // ConfiguredTaskAwaiter<string>
+        _ = await Task.FromResult(0).ConfigureAwait(false);             // ConfiguredTaskAwaiter<int>
+        _ = await Task.FromResult(false).ConfigureAwait(false);         // ConfiguredTaskAwaiter<bool>
 
-        // ValueTaskAwaiter (non-generic) — ValueTask returned by IAsyncDisposable.DisposeAsync()
-        //                                  at the end of the `await foreach` in SummarizeStreamingAsync.
-        await new ValueTask();
+        // ── ConfiguredValueTaskAwaiter variants (.ConfigureAwait(false) path) ──
+        // Used by the await-foreach + .WithCancellation() pattern in SummarizeStreamingAsync:
+        //   MoveNextAsync() → ConfiguredValueTaskAwaitable<bool>
+        //   DisposeAsync()  → ConfiguredValueTaskAwaitable
+
+        _ = await new ValueTask<bool>(false).ConfigureAwait(false);     // ConfiguredValueTaskAwaiter<bool>
+        await new ValueTask().ConfigureAwait(false);                    // ConfiguredValueTaskAwaiter (non-generic)
     }
 
     [ObservableProperty]

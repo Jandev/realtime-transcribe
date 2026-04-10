@@ -4,6 +4,7 @@ using Azure.Identity;
 using OpenAI.Audio;
 using OpenAI.Chat;
 using RealtimeTranscribe.Models;
+using System.Runtime.CompilerServices;
 
 namespace RealtimeTranscribe.Services;
 
@@ -141,6 +142,44 @@ public class TranscriptionService : ITranscriptionService
                     await onToken(part.Text);
             }
         }
+    }
+
+    /// <inheritdoc/>
+    [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.NoOptimization)]
+    public void WarmUp()
+    {
+        // Force Mono to create runtime vtables for the specific TaskAwaiter<T> instantiations
+        // that appear in TranscribeAsync, DiarizeAsync, SummarizeAsync, and SummarizeStreamingAsync
+        // state machines.  The generic type argument T is an Azure SDK response class; each distinct
+        // T produces a separate MonoClass whose vtable must be initialised independently.
+        //
+        // Without this, the first Task.Run that JIT-compiles one of these methods on a TP Worker
+        // hits interp_try_devirt → mono_class_get_virtual_method with a null vtable → EXC_BAD_ACCESS
+        // at 0x00000000000000a0.
+        //
+        // RuntimeHelpers.RunClassConstructor is purely synchronous (no async IL), so calling it
+        // cannot itself trigger the interp_try_devirt crash.
+
+        // TranscribeAsync: await audioClient.TranscribeAudioAsync(…) → TaskAwaiter<ClientResult<AudioTranscription>>
+        RuntimeHelpers.RunClassConstructor(
+            typeof(TaskAwaiter<System.ClientModel.ClientResult<AudioTranscription>>).TypeHandle);
+
+        // DiarizeAsync / SummarizeAsync: await chatClient.CompleteChatAsync(…) → TaskAwaiter<ClientResult<ChatCompletion>>
+        RuntimeHelpers.RunClassConstructor(
+            typeof(TaskAwaiter<System.ClientModel.ClientResult<ChatCompletion>>).TypeHandle);
+
+        // Azure SDK internal methods use .ConfigureAwait(false) extensively.
+        // Cover the ConfiguredTaskAwaiter variants for the same response types.
+        RuntimeHelpers.RunClassConstructor(
+            typeof(ConfiguredTaskAwaitable<System.ClientModel.ClientResult<AudioTranscription>>.ConfiguredTaskAwaiter).TypeHandle);
+        RuntimeHelpers.RunClassConstructor(
+            typeof(ConfiguredTaskAwaitable<System.ClientModel.ClientResult<ChatCompletion>>.ConfiguredTaskAwaiter).TypeHandle);
+
+        // SummarizeStreamingAsync: CompleteChatStreamingAsync returns AsyncCollectionResult<StreamingChatCompletionUpdate>.
+        // The await-foreach with .WithCancellation() uses ConfiguredCancelableAsyncEnumerable<T>.
+        // Force-load the enumerator type so its vtable is ready.
+        RuntimeHelpers.RunClassConstructor(
+            typeof(System.Runtime.CompilerServices.ConfiguredCancelableAsyncEnumerable<StreamingChatCompletionUpdate>).TypeHandle);
     }
 
     private AzureOpenAIClient BuildAzureClient()

@@ -37,4 +37,15 @@ public interface ITranscriptionService
     /// <param name="onToken">Async callback invoked with each streamed token fragment.</param>
     /// <param name="cancellationToken">Token that cancels the streaming request.</param>
     Task SummarizeStreamingAsync(string transcript, Func<string, Task> onToken, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Forces Mono runtime vtable initialisation for Azure SDK response types used as
+    /// generic type arguments in the awaiter structs of <see cref="TranscribeAsync"/>,
+    /// <see cref="DiarizeAsync"/>, and <see cref="SummarizeStreamingAsync"/>.
+    /// <para>
+    /// Must be called on the main thread during startup — before any <see cref="Task.Run"/>
+    /// worker can trigger first-time JIT compilation of those async state machines.
+    /// </para>
+    /// </summary>
+    void WarmUp();
 }
