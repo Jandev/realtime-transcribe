@@ -168,7 +168,7 @@ public partial class MainViewModel : ObservableObject
             catch (ReflectionTypeLoadException ex)
             {
                 // Some types may not be loadable; use the subset that succeeded.
-                types = ex.Types.Where(t => t is not null).ToArray()!;
+                types = ex.Types.Where(t => t is not null).Cast<Type>().ToArray();
             }
 
             foreach (var type in types)
