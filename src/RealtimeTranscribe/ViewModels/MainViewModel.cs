@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using RealtimeTranscribe.Services;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
 
@@ -32,28 +33,26 @@ public partial class MainViewModel : ObservableObject
         IMarkdownProcessor markdownProcessor,
         IFileStorageService fileStorageService)
     {
-        // ── Step 1: Force Mono to create runtime vtables for every awaiter struct ──
+        // ── Defence-in-depth against the Mono interpreter interp_try_devirt crash ──
         //
-        // The Mono interpreter's interp_try_devirt function dereferences the MonoClass
-        // vtable pointer (at offset +0xa0) when devirtualising
-        //   constrained. TAwaiter callvirt ICriticalNotifyCompletion.UnsafeOnCompleted
-        // during first-time JIT compilation of any async state machine's MoveNext().
-        // If TAwaiter's MonoClass has never been loaded, the vtable pointer is null and
-        // the dereference causes EXC_BAD_ACCESS SIGSEGV at address 0x00000000000000a0.
+        // The PRIMARY fix is the project-level <UseInterpreter>false</UseInterpreter> MSBuild
+        // property which disables the Mono interpreter entirely — the runtime then uses JIT
+        // (Debug) or AOT (Release) instead, neither of which trigger the null-vtable dereference
+        // in interp_try_devirt.  See: https://github.com/dotnet/runtime/issues/126448
         //
-        // RuntimeHelpers.RunClassConstructor calls mono_class_vtable_checked which creates
-        // the vtable, so this purely synchronous call (no async state machines compiled)
-        // prevents the crash for every type we list here.
-        //
-        // Must run BEFORE WarmUpInterpreterAsync (step 2) because that method's own
-        // MoveNext() compilation walks through interp_try_devirt for its awaiter types.
+        // The warm-up steps below are a SECONDARY belt-and-suspenders measure that protects
+        // against the crash if the interpreter is ever re-enabled (e.g. a future .NET workload
+        // update changes the default, or a specific assembly forces interpreter fallback).
+
+        // Step 1: Force Mono to create runtime vtables for every awaiter struct.
         ForceInitializeAwaiterVtables();
 
-        // ── Step 2: Exercise the async state machine compilation path ──
-        //
-        // Await already-completed values of each awaiter type, forcing Mono to JIT-compile
-        // this method's MoveNext() — including every suspension point — on the main thread.
-        // This initialises any remaining interpreter-internal structures beyond the vtable.
+        // Step 2: Scan Azure SDK and System.ClientModel assemblies and force-initialise
+        //         vtables for ALL types, so the interpreter never encounters an uninitialised
+        //         class when devirtualising calls in state-machine MoveNext() methods.
+        ForceInitializeAssemblyVtables();
+
+        // Step 3: Exercise the async state-machine compilation path on the main thread.
         WarmUpInterpreterAsync().GetAwaiter().GetResult();
 
         _audioService = audioService;
@@ -62,12 +61,8 @@ public partial class MainViewModel : ObservableObject
         _markdownProcessor = markdownProcessor;
         _fileStorageService = fileStorageService;
 
-        // ── Step 3: Force vtable init for Azure SDK response types ──
-        //
-        // TranscribeAsync / DiarizeAsync / SummarizeStreamingAsync use awaiter types
-        // parameterised on Azure SDK classes (ClientResult<AudioTranscription>, etc.).
-        // These specific MonoClass instantiations need separate vtable initialisation
-        // because Mono does not share vtables across distinct generic instantiations.
+        // Step 4: Force vtable init for Azure SDK response types used by
+        //         TranscribeAsync / DiarizeAsync / SummarizeStreamingAsync.
         _transcriptionService.WarmUp();
 
         // React when a Bluetooth / wireless input device disconnects mid-recording.
@@ -124,6 +119,76 @@ public partial class MainViewModel : ObservableObject
         RuntimeHelpers.RunClassConstructor(typeof(ConfiguredValueTaskAwaitable.ConfiguredValueTaskAwaiter).TypeHandle);
         RuntimeHelpers.RunClassConstructor(typeof(ConfiguredValueTaskAwaitable<bool>.ConfiguredValueTaskAwaiter).TypeHandle);
         RuntimeHelpers.RunClassConstructor(typeof(ConfiguredValueTaskAwaitable<int>.ConfiguredValueTaskAwaiter).TypeHandle);
+    }
+
+    /// <summary>
+    /// Scans all currently-loaded assemblies from the Azure SDK, System.ClientModel, and
+    /// OpenAI namespaces and forces Mono to create the runtime vtable for every exported
+    /// type.  This catches internal generic instantiations, nested state-machine types, and
+    /// result wrapper classes that cannot be enumerated by hand.
+    /// <para>
+    /// The method silently skips any type that fails to load (e.g. open generic definitions
+    /// or types with unsatisfied dependencies), so it is safe to call unconditionally.
+    /// </para>
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.NoOptimization)]
+    private static void ForceInitializeAssemblyVtables()
+    {
+        // Prefixes of assembly names whose types should be eagerly vtable-initialised.
+        string[] assemblyPrefixes =
+        [
+            "Azure.",
+            "System.ClientModel",
+            "OpenAI",
+        ];
+
+        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            var name = assembly.GetName().Name;
+            if (name is null)
+                continue;
+
+            bool matches = false;
+            foreach (var prefix in assemblyPrefixes)
+            {
+                if (name.StartsWith(prefix, StringComparison.Ordinal))
+                {
+                    matches = true;
+                    break;
+                }
+            }
+            if (!matches)
+                continue;
+
+            Type[] types;
+            try
+            {
+                types = assembly.GetTypes();
+            }
+            catch (ReflectionTypeLoadException ex)
+            {
+                // Some types may not be loadable; use the subset that succeeded.
+                types = ex.Types.Where(t => t is not null).ToArray()!;
+            }
+
+            foreach (var type in types)
+            {
+                // Skip open generics — they have no concrete vtable.
+                if (type.IsGenericTypeDefinition)
+                    continue;
+
+                try
+                {
+                    RuntimeHelpers.RunClassConstructor(type.TypeHandle);
+                }
+                catch
+                {
+                    // Swallow: some types may have static-constructor dependencies on
+                    // resources that are not available at this point. The vtable is
+                    // still created even if the cctor throws.
+                }
+            }
+        }
     }
 
     /// <summary>

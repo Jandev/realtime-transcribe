@@ -27,6 +27,22 @@
     <ValidateXcodeVersion>false</ValidateXcodeVersion>
   </PropertyGroup>
 
+  <!--
+    Disable the Mono interpreter on MacCatalyst to avoid a known runtime bug:
+    interp_try_devirt (transform.c) dereferences a null vtable pointer (offset +0xa0)
+    when JIT-compiling a method on a background thread for the first time, causing
+    EXC_BAD_ACCESS (SIGSEGV) at address 0x00000000000000a0.
+    See: https://github.com/dotnet/runtime/issues/126448
+
+    With UseInterpreter=false the runtime uses:
+      • Debug   — JIT compilation (allowed on macOS / Mac Catalyst)
+      • Release — AOT compilation (the default for Release builds)
+    Neither path invokes the interpreter's interp_try_devirt optimisation pass.
+  -->
+  <PropertyGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">
+    <UseInterpreter>false</UseInterpreter>
+  </PropertyGroup>
+
   <ItemGroup>
     <!-- App Icon -->
     <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#007AFF" />
