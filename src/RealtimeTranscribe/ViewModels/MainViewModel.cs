@@ -33,24 +33,36 @@ public partial class MainViewModel : ObservableObject
         IMarkdownProcessor markdownProcessor,
         IFileStorageService fileStorageService)
     {
-        // ── Defence-in-depth against the Mono interpreter interp_try_devirt crash ──
+        // ── Workaround for Mono interpreter interp_try_devirt crash ──
         //
-        // The PRIMARY fix is the project-level <UseInterpreter>false</UseInterpreter> MSBuild
-        // property which disables the Mono interpreter entirely — the runtime then uses JIT
-        // (Debug) or AOT (Release) instead, neither of which trigger the null-vtable dereference
-        // in interp_try_devirt.  See: https://github.com/dotnet/runtime/issues/126448
+        // The Mono interpreter's method-transformation pass (interp_try_devirt in transform.c)
+        // can dereference a null class-vtable pointer at offset +0xa0 when it tries to
+        // devirtualize a call in a method being compiled for the first time on a background
+        // thread, causing EXC_BAD_ACCESS (SIGSEGV).
+        // See: https://github.com/dotnet/runtime/issues/126448
         //
-        // The warm-up steps below are a SECONDARY belt-and-suspenders measure that protects
-        // against the crash if the interpreter is ever re-enabled (e.g. a future .NET workload
-        // update changes the default, or a specific assembly forces interpreter fallback).
+        // Disabling the interpreter via <UseInterpreter>false</UseInterpreter> is NOT viable:
+        // in Debug builds there are no AOT modules, and the runtime fatally aborts during
+        // startup when load_aot_module fails for a referenced assembly.
+        //
+        // Instead, we force Mono to create runtime vtables for every type in every loaded
+        // assembly and hook AppDomain.AssemblyLoad to cover lazily-loaded assemblies.  This
+        // ensures that by the time any background thread compiles a method, every type that
+        // method could reference already has a valid vtable.
+
+        // Step 0: Register an assembly-load handler so that ANY assembly loaded in the future
+        //         (e.g. Azure SDK internals loaded lazily on first API call) gets its vtables
+        //         initialised immediately — on the loading thread, before any background thread
+        //         can compile a method that references types from that assembly.
+        AppDomain.CurrentDomain.AssemblyLoad += OnAssemblyLoaded;
 
         // Step 1: Force Mono to create runtime vtables for every awaiter struct.
         ForceInitializeAwaiterVtables();
 
-        // Step 2: Scan Azure SDK and System.ClientModel assemblies and force-initialise
-        //         vtables for ALL types, so the interpreter never encounters an uninitialised
-        //         class when devirtualising calls in state-machine MoveNext() methods.
-        ForceInitializeAssemblyVtables();
+        // Step 2: Scan ALL currently-loaded assemblies and force-initialise vtables for every
+        //         exported type.  Combined with the AssemblyLoad handler above, this ensures
+        //         complete coverage for both already-loaded and future-loaded assemblies.
+        ForceInitializeAllVtables();
 
         // Step 3: Exercise the async state-machine compilation path on the main thread.
         WarmUpInterpreterAsync().GetAwaiter().GetResult();
@@ -122,72 +134,68 @@ public partial class MainViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Scans all currently-loaded assemblies from the Azure SDK, System.ClientModel, and
-    /// OpenAI namespaces and forces Mono to create the runtime vtable for every exported
-    /// type.  This catches internal generic instantiations, nested state-machine types, and
-    /// result wrapper classes that cannot be enumerated by hand.
-    /// <para>
-    /// The method silently skips any type that fails to load (e.g. open generic definitions
-    /// or types with unsatisfied dependencies), so it is safe to call unconditionally.
-    /// </para>
+    /// Event handler registered on <see cref="AppDomain.AssemblyLoad"/>.  Every time the
+    /// runtime loads a new assembly (including lazy loads triggered by Azure SDK internals),
+    /// we immediately initialise vtables for all its types on the loading thread — before
+    /// any background thread can compile a method that references them.
+    /// </summary>
+    private static void OnAssemblyLoaded(object? sender, AssemblyLoadEventArgs args)
+    {
+        ForceInitializeAssemblyTypes(args.LoadedAssembly);
+    }
+
+    /// <summary>
+    /// Forces Mono to create runtime vtables for every non-open-generic type in the given
+    /// assembly by calling <see cref="RuntimeHelpers.RunClassConstructor"/>.  Types that
+    /// fail to load (missing dependencies, open generics) are silently skipped.
     /// </summary>
     [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.NoOptimization)]
-    private static void ForceInitializeAssemblyVtables()
+    private static void ForceInitializeAssemblyTypes(Assembly assembly)
     {
-        // Prefixes of assembly names whose types should be eagerly vtable-initialised.
-        string[] assemblyPrefixes =
-        [
-            "Azure.",
-            "System.ClientModel",
-            "OpenAI",
-        ];
-
-        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+        Type[] types;
+        try
         {
-            var name = assembly.GetName().Name;
-            if (name is null)
+            types = assembly.GetTypes();
+        }
+        catch (ReflectionTypeLoadException ex)
+        {
+            types = ex.Types.Where(t => t is not null).Cast<Type>().ToArray();
+        }
+        catch
+        {
+            // Some dynamic or resource-only assemblies may not support GetTypes().
+            return;
+        }
+
+        foreach (var type in types)
+        {
+            if (type.IsGenericTypeDefinition)
                 continue;
 
-            bool matches = false;
-            foreach (var prefix in assemblyPrefixes)
-            {
-                if (name.StartsWith(prefix, StringComparison.Ordinal))
-                {
-                    matches = true;
-                    break;
-                }
-            }
-            if (!matches)
-                continue;
-
-            Type[] types;
             try
             {
-                types = assembly.GetTypes();
+                RuntimeHelpers.RunClassConstructor(type.TypeHandle);
             }
-            catch (ReflectionTypeLoadException ex)
+            catch
             {
-                // Some types may not be loadable; use the subset that succeeded.
-                types = ex.Types.Where(t => t is not null).Cast<Type>().ToArray();
+                // Swallow: some types may have static-constructor dependencies on
+                // resources that are not available at this point. The vtable is
+                // still created even if the cctor throws.
             }
+        }
+    }
 
-            foreach (var type in types)
-            {
-                // Skip open generics — they have no concrete vtable.
-                if (type.IsGenericTypeDefinition)
-                    continue;
-
-                try
-                {
-                    RuntimeHelpers.RunClassConstructor(type.TypeHandle);
-                }
-                catch
-                {
-                    // Swallow: some types may have static-constructor dependencies on
-                    // resources that are not available at this point. The vtable is
-                    // still created even if the cctor throws.
-                }
-            }
+    /// <summary>
+    /// Iterates over ALL currently-loaded assemblies and forces Mono to create the runtime
+    /// vtable for every exported type.  This is the one-time startup scan; the
+    /// <see cref="OnAssemblyLoaded"/> handler covers any assemblies loaded later.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.NoOptimization)]
+    private static void ForceInitializeAllVtables()
+    {
+        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            ForceInitializeAssemblyTypes(assembly);
         }
     }
 
