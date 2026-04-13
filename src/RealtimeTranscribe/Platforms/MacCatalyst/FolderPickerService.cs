@@ -132,7 +132,7 @@ public sealed class FolderPickerService : IFolderPickerService, IDisposable
             _service = service;
         }
 
-        public override void DidPickDocumentsAtUrls(UIDocumentPickerViewController controller, NSUrl[] urls)
+        public override void DidPickDocumentAtUrls(UIDocumentPickerViewController controller, NSUrl[] urls)
         {
             var url = urls.FirstOrDefault();
             if (url != null)
