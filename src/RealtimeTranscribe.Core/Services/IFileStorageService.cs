@@ -28,4 +28,10 @@ public interface IFileStorageService
     /// Reads and returns the text content of the file at <paramref name="filePath"/>.
     /// </summary>
     Task<string> LoadSummaryAsync(string filePath, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Renames the file at <paramref name="oldFilePath"/> to <paramref name="newName"/>.md
+    /// in the same directory.  Returns the updated <see cref="TranscriptionFile"/>.
+    /// </summary>
+    Task<TranscriptionFile> RenameSummaryAsync(string oldFilePath, string newName, CancellationToken cancellationToken = default);
 }

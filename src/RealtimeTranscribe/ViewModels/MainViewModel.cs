@@ -203,13 +203,21 @@ public partial class MainViewModel : ObservableObject
 
     // ── Sidebar: saved transcription files ──────────────────────────────
 
-    /// <summary>Transcription summary files available in the output folder, newest-first.</summary>
-    public ObservableCollection<TranscriptionFile> TranscriptionFiles { get; } = new();
+    /// <summary>All files from the service — cached for filtering.</summary>
+    private IReadOnlyList<TranscriptionFile> _allFiles = Array.Empty<TranscriptionFile>();
+
+    /// <summary>Grouped and filtered transcription files shown in the sidebar.</summary>
+    public ObservableCollection<TranscriptionFileGroup> GroupedTranscriptionFiles { get; } = new();
 
     [ObservableProperty]
-    private TranscriptionFile? _selectedTranscriptionFile;
+    private TranscriptionFileItem? _selectedTranscriptionFile;
 
-    partial void OnSelectedTranscriptionFileChanged(TranscriptionFile? value)
+    [ObservableProperty]
+    private string _filterText = string.Empty;
+
+    partial void OnFilterTextChanged(string value) => RebuildGroupedFiles();
+
+    partial void OnSelectedTranscriptionFileChanged(TranscriptionFileItem? value)
     {
         if (value is not null)
             _ = LoadTranscriptionFileAsync(value);
@@ -220,10 +228,8 @@ public partial class MainViewModel : ObservableObject
     {
         try
         {
-            var files = await _fileStorageService.ListSummariesAsync();
-            TranscriptionFiles.Clear();
-            foreach (var f in files)
-                TranscriptionFiles.Add(f);
+            _allFiles = await _fileStorageService.ListSummariesAsync();
+            RebuildGroupedFiles();
         }
         catch (Exception ex)
         {
@@ -231,7 +237,62 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
-    private async Task LoadTranscriptionFileAsync(TranscriptionFile file)
+    /// <summary>Applies <see cref="FilterText"/> and groups the cached file list by date.</summary>
+    private void RebuildGroupedFiles()
+    {
+        var filtered = string.IsNullOrWhiteSpace(FilterText)
+            ? _allFiles
+            : _allFiles.Where(f =>
+                Path.GetFileNameWithoutExtension(f.FilePath)
+                    .Contains(FilterText, StringComparison.OrdinalIgnoreCase)
+                || f.DisplayName.Contains(FilterText, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+        var groups = filtered
+            .Select(f => new TranscriptionFileItem(f))
+            .GroupBy(item => item.DateKey)
+            .OrderByDescending(g => g.Key)
+            .Select(g => new TranscriptionFileGroup(g.Key, g));
+
+        GroupedTranscriptionFiles.Clear();
+        foreach (var g in groups)
+            GroupedTranscriptionFiles.Add(g);
+    }
+
+    /// <summary>
+    /// Commits an inline rename for the given item.  Called from the code-behind
+    /// when the user presses Enter or the Entry loses focus.
+    /// </summary>
+    [RelayCommand]
+    private async Task CommitRenameAsync(TranscriptionFileItem? item)
+    {
+        if (item is null || !item.IsEditing)
+            return;
+
+        var newName = item.EditName?.Trim();
+
+        // No change or empty — cancel.
+        if (string.IsNullOrEmpty(newName) || newName == item.FileNameStem)
+        {
+            item.CancelEdit();
+            return;
+        }
+
+        try
+        {
+            var updated = await _fileStorageService.RenameSummaryAsync(item.FilePath, newName);
+            item.ApplyRename(updated);
+            // Refresh the full list to keep grouping/sorting correct.
+            await RefreshFilesAsync();
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Rename failed: {ex.Message}";
+            item.CancelEdit();
+        }
+    }
+
+    private async Task LoadTranscriptionFileAsync(TranscriptionFileItem file)
     {
         try
         {

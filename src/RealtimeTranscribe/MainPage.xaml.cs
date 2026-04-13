@@ -37,6 +37,34 @@ public partial class MainPage : ContentPage
             editor.CursorPosition = text.Length;
     }
 
+    // ── Inline rename handlers ───────────────────────────────────────────
+
+    private void OnFileDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (sender is VisualElement element && element.BindingContext is TranscriptionFileItem item)
+        {
+            item.BeginEdit();
+        }
+    }
+
+    private void OnRenameCompleted(object? sender, EventArgs e)
+    {
+        if (sender is Entry entry && entry.BindingContext is TranscriptionFileItem item)
+        {
+            _ = _viewModel.CommitRenameCommand.ExecuteAsync(item);
+        }
+    }
+
+    private void OnRenameUnfocused(object? sender, FocusEventArgs e)
+    {
+        if (sender is Entry entry && entry.BindingContext is TranscriptionFileItem item && item.IsEditing)
+        {
+            _ = _viewModel.CommitRenameCommand.ExecuteAsync(item);
+        }
+    }
+
+    // ── Summary auto-resize ──────────────────────────────────────────────
+
     private async void OnSummaryWebViewNavigated(object? sender, WebNavigatedEventArgs e)
     {
         if (sender is not WebView webView)

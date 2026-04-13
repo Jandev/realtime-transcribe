@@ -11,7 +11,7 @@
         <!-- ══ Sidebar ═══════════════════════════════════════════════════ -->
         <Grid
             Grid.Column="0"
-            RowDefinitions="Auto,*"
+            RowDefinitions="Auto,Auto,*"
             BackgroundColor="{AppThemeBinding Light={StaticResource CardBackground}, Dark={StaticResource CardBackgroundDark}}">
 
             <!-- Sidebar header -->
@@ -37,19 +37,36 @@
                     ToolTipProperties.Text="Refresh list" />
             </Grid>
 
+            <!-- Filter / search -->
+            <Border
+                Grid.Row="1"
+                Margin="8,0,8,8"
+                StrokeThickness="0.5"
+                StrokeShape="RoundRectangle 8"
+                Padding="0">
+                <Entry
+                    Placeholder="Filter…"
+                    FontSize="12"
+                    Margin="6,0"
+                    Text="{Binding FilterText}"
+                    ClearButtonVisibility="WhileEditing" />
+            </Border>
+
             <!-- Separator below header -->
             <BoxView
-                Grid.Row="0"
+                Grid.Row="1"
                 HeightRequest="0.5"
                 VerticalOptions="End"
                 BackgroundColor="{AppThemeBinding Light={StaticResource Gray300}, Dark={StaticResource Gray800}}" />
 
-            <!-- File list -->
+            <!-- Grouped file list -->
             <CollectionView
-                Grid.Row="1"
-                ItemsSource="{Binding TranscriptionFiles}"
+                Grid.Row="2"
+                x:Name="FileList"
+                ItemsSource="{Binding GroupedTranscriptionFiles}"
                 SelectedItem="{Binding SelectedTranscriptionFile}"
-                SelectionMode="Single">
+                SelectionMode="Single"
+                IsGrouped="True">
                 <CollectionView.EmptyView>
                     <Label
                         Margin="12,16"
@@ -57,14 +74,38 @@
                         Text="No transcriptions yet."
                         TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray600}}" />
                 </CollectionView.EmptyView>
+                <CollectionView.GroupHeaderTemplate>
+                    <DataTemplate>
+                        <Grid Padding="12,10,12,4">
+                            <Label
+                                FontSize="11"
+                                FontAttributes="Bold"
+                                Text="{Binding DateHeader}"
+                                TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray500}}" />
+                        </Grid>
+                    </DataTemplate>
+                </CollectionView.GroupHeaderTemplate>
                 <CollectionView.ItemTemplate>
                     <DataTemplate>
-                        <Grid Padding="12,10">
+                        <Grid Padding="12,6">
+                            <Grid.GestureRecognizers>
+                                <TapGestureRecognizer NumberOfTapsRequired="2" Tapped="OnFileDoubleTapped" />
+                            </Grid.GestureRecognizers>
+                            <!-- Display mode -->
                             <Label
                                 FontSize="12"
                                 LineBreakMode="WordWrap"
+                                IsVisible="{Binding IsEditing, Converter={StaticResource InvertedBoolConverter}}"
                                 Text="{Binding DisplayName}"
                                 TextColor="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}" />
+                            <!-- Inline-rename mode -->
+                            <Entry
+                                x:Name="RenameEntry"
+                                FontSize="12"
+                                IsVisible="{Binding IsEditing}"
+                                Text="{Binding EditName}"
+                                Completed="OnRenameCompleted"
+                                Unfocused="OnRenameUnfocused" />
                         </Grid>
                     </DataTemplate>
                 </CollectionView.ItemTemplate>

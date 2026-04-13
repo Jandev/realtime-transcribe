@@ -45,6 +45,22 @@ public class FileStorageService : IFileStorageService
         return File.ReadAllTextAsync(filePath, Encoding.UTF8, cancellationToken);
     }
 
+    /// <inheritdoc/>
+    public Task<TranscriptionFile> RenameSummaryAsync(string oldFilePath, string newName, CancellationToken cancellationToken = default)
+    {
+        var directory = Path.GetDirectoryName(oldFilePath)!;
+        var newFileName = newName.Trim() + ".md";
+        var newFilePath = Path.Combine(directory, newFileName);
+
+        File.Move(oldFilePath, newFilePath);
+
+        var info = new FileInfo(newFilePath);
+        return Task.FromResult(new TranscriptionFile(
+            DisplayName: FormatDisplayName(info.Name, info.LastWriteTime),
+            FilePath: info.FullName,
+            LastModified: info.LastWriteTime));
+    }
+
     /// <summary>
     /// Converts a filename such as <c>20240315 1430.md</c> into a friendly label
     /// like <c>Mar 15, 2024 14:30</c>.  Falls back to the bare filename stem on

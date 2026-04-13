@@ -236,4 +236,77 @@ public class FileStorageServiceTests : IDisposable
 
         Assert.Equal(expected, result);
     }
+
+    // ── RenameSummaryAsync ────────────────────────────────────────────────
+
+    [Fact]
+    public async Task RenameSummaryAsync_RenamesFileOnDisk()
+    {
+        var service = CreateService(_tempDir);
+        var timestamp = new DateTime(2024, 3, 15, 14, 30, 0);
+        await service.SaveSummaryAsync("content", timestamp);
+        var oldPath = Path.Combine(_tempDir, "20240315 1430.md");
+
+        await service.RenameSummaryAsync(oldPath, "Daily standup");
+
+        Assert.False(File.Exists(oldPath));
+        Assert.True(File.Exists(Path.Combine(_tempDir, "Daily standup.md")));
+    }
+
+    [Fact]
+    public async Task RenameSummaryAsync_PreservesFileContent()
+    {
+        var service = CreateService(_tempDir);
+        var timestamp = new DateTime(2024, 3, 15, 14, 30, 0);
+        var content = "## Summary\n\nOriginal content";
+        await service.SaveSummaryAsync(content, timestamp);
+        var oldPath = Path.Combine(_tempDir, "20240315 1430.md");
+
+        await service.RenameSummaryAsync(oldPath, "My meeting");
+
+        var actual = await File.ReadAllTextAsync(Path.Combine(_tempDir, "My meeting.md"));
+        Assert.Equal(content, actual);
+    }
+
+    [Fact]
+    public async Task RenameSummaryAsync_ReturnsUpdatedTranscriptionFile()
+    {
+        var service = CreateService(_tempDir);
+        var timestamp = new DateTime(2024, 3, 15, 14, 30, 0);
+        await service.SaveSummaryAsync("content", timestamp);
+        var oldPath = Path.Combine(_tempDir, "20240315 1430.md");
+
+        var result = await service.RenameSummaryAsync(oldPath, "Daily standup");
+
+        Assert.Equal(Path.Combine(_tempDir, "Daily standup.md"), result.FilePath);
+        Assert.Equal("Daily standup", result.DisplayName); // Non-date name falls back to stem
+    }
+
+    [Fact]
+    public async Task RenameSummaryAsync_TrimsWhitespace()
+    {
+        var service = CreateService(_tempDir);
+        var timestamp = new DateTime(2024, 3, 15, 14, 30, 0);
+        await service.SaveSummaryAsync("content", timestamp);
+        var oldPath = Path.Combine(_tempDir, "20240315 1430.md");
+
+        var result = await service.RenameSummaryAsync(oldPath, "  Daily standup  ");
+
+        Assert.Equal(Path.Combine(_tempDir, "Daily standup.md"), result.FilePath);
+    }
+
+    [Fact]
+    public async Task RenameSummaryAsync_RenamedFileAppearsInList()
+    {
+        var service = CreateService(_tempDir);
+        var timestamp = new DateTime(2024, 3, 15, 14, 30, 0);
+        await service.SaveSummaryAsync("content", timestamp);
+        var oldPath = Path.Combine(_tempDir, "20240315 1430.md");
+
+        await service.RenameSummaryAsync(oldPath, "Retrospective");
+        var files = await service.ListSummariesAsync();
+
+        Assert.Single(files);
+        Assert.Contains("Retrospective", files[0].DisplayName);
+    }
 }
