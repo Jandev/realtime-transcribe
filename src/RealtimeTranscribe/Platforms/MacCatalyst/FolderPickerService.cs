@@ -28,7 +28,7 @@ public sealed class FolderPickerService : IFolderPickerService, IDisposable
         // UIKit work must be on the main thread.
         MainThread.BeginInvokeOnMainThread(() =>
         {
-            var picker = new UIDocumentPickerViewController(new[] { UTType.Folder })
+            var picker = new UIDocumentPickerViewController(new[] { UTTypes.Folder })
             {
                 AllowsMultipleSelection = false
             };
@@ -58,9 +58,9 @@ public sealed class FolderPickerService : IFolderPickerService, IDisposable
             var url = NSUrl.FromBookmarkData(
                 data,
                 NSUrlBookmarkResolutionOptions.WithSecurityScope,
-                relativeUrl: null,
-                bookmarkDataIsStale: out bool isStale,
-                error: out NSError? error);
+                null,
+                out bool isStale,
+                out NSError? error);
 
             if (url == null || error != null)
                 return null;
@@ -109,9 +109,9 @@ public sealed class FolderPickerService : IFolderPickerService, IDisposable
         {
             var data = url.CreateBookmarkData(
                 NSUrlBookmarkCreationOptions.WithSecurityScope,
-                resourceValues: null,
-                relativeUrl: null,
-                error: out NSError? error);
+                null,
+                null,
+                out NSError? error);
 
             if (data != null && error == null)
                 Preferences.Default.Set(BookmarkPrefsKey, Convert.ToBase64String(data.ToArray()));
