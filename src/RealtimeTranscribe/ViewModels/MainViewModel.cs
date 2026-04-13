@@ -1,6 +1,8 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using RealtimeTranscribe.Models;
 using RealtimeTranscribe.Services;
+using System.Collections.ObjectModel;
 using System.Text;
 
 namespace RealtimeTranscribe.ViewModels;
@@ -198,6 +200,117 @@ public partial class MainViewModel : ObservableObject
     private bool HasTranscript => !string.IsNullOrEmpty(Transcript) && !IsRecording && !IsProcessing;
     private bool HasDiarizedTranscript => !string.IsNullOrEmpty(DiarizedTranscript) && !IsRecording && !IsProcessing;
     private bool HasSummary => !string.IsNullOrEmpty(Summary) && !IsRecording && !IsProcessing;
+
+    // ── Sidebar: saved transcription files ──────────────────────────────
+
+    /// <summary>All files from the service — cached for filtering.</summary>
+    private IReadOnlyList<TranscriptionFile> _allFiles = Array.Empty<TranscriptionFile>();
+
+    /// <summary>Grouped and filtered transcription files shown in the sidebar.</summary>
+    public ObservableCollection<TranscriptionFileGroup> GroupedTranscriptionFiles { get; } = new();
+
+    [ObservableProperty]
+    private TranscriptionFileItem? _selectedTranscriptionFile;
+
+    [ObservableProperty]
+    private string _filterText = string.Empty;
+
+    partial void OnFilterTextChanged(string value) => RebuildGroupedFiles();
+
+    partial void OnSelectedTranscriptionFileChanged(TranscriptionFileItem? value)
+    {
+        if (value is not null)
+            _ = LoadTranscriptionFileAsync(value);
+    }
+
+    [RelayCommand]
+    private async Task RefreshFilesAsync()
+    {
+        try
+        {
+            _allFiles = await _fileStorageService.ListSummariesAsync();
+            RebuildGroupedFiles();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[MainViewModel] Error refreshing files: {ex}");
+        }
+    }
+
+    /// <summary>Applies <see cref="FilterText"/> and groups the cached file list by date.</summary>
+    private void RebuildGroupedFiles()
+    {
+        var items = _allFiles.Select(f => new TranscriptionFileItem(f));
+
+        if (!string.IsNullOrWhiteSpace(FilterText))
+        {
+            items = items.Where(item =>
+                item.FileNameStem.Contains(FilterText, StringComparison.OrdinalIgnoreCase)
+                || item.DisplayName.Contains(FilterText, StringComparison.OrdinalIgnoreCase));
+        }
+
+        var groups = items
+            .GroupBy(item => item.DateKey)
+            .OrderByDescending(g => g.Key)
+            .Select(g => new TranscriptionFileGroup(g.Key, g));
+
+        GroupedTranscriptionFiles.Clear();
+        foreach (var g in groups)
+            GroupedTranscriptionFiles.Add(g);
+    }
+
+    /// <summary>
+    /// Commits an inline rename for the given item.  Called from the code-behind
+    /// when the user presses Enter or the Entry loses focus.
+    /// </summary>
+    [RelayCommand]
+    private async Task CommitRenameAsync(TranscriptionFileItem? item)
+    {
+        if (item is null)
+            return;
+
+        // Capture EditName immediately: pressing Enter fires Completed then Unfocused in quick
+        // succession.  OnRenameUnfocused calls CancelEdit() (which clears IsEditing) before this
+        // async method resumes, so we must not gate on IsEditing here.
+        var newName = item.EditName?.Trim();
+
+        // No change or empty — cancel.
+        if (string.IsNullOrEmpty(newName) || newName == item.FileNameStem)
+        {
+            item.CancelEdit();
+            return;
+        }
+
+        try
+        {
+            var updated = await _fileStorageService.RenameSummaryAsync(item.FilePath, newName);
+            item.ApplyRename(updated);
+            // Refresh the full list to keep grouping/sorting correct.
+            await RefreshFilesAsync();
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Rename failed: {ex.Message}";
+            item.CancelEdit();
+        }
+    }
+
+    private async Task LoadTranscriptionFileAsync(TranscriptionFileItem file)
+    {
+        try
+        {
+            StatusMessage = $"Loading {file.DisplayName}…";
+            var content = await _fileStorageService.LoadTranscriptionAsync(file.FilePath);
+            Summary = content.Summary;
+            Transcript = content.Transcript;
+            DiarizedTranscript = content.DiarizedTranscript;
+            StatusMessage = $"Loaded: {file.DisplayName}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error loading file: {ex.Message}";
+        }
+    }
 
     private async Task StartRecordingAsync()
     {
@@ -449,8 +562,11 @@ public partial class MainViewModel : ObservableObject
                 },
                 _cts.Token);
 
-            if (!string.IsNullOrEmpty(Summary))
-                await _fileStorageService.SaveSummaryAsync(Summary, DateTime.Now, _cts.Token);
+            if (!string.IsNullOrEmpty(Summary) || !string.IsNullOrEmpty(Transcript) || !string.IsNullOrEmpty(DiarizedTranscript))
+            {
+                await _fileStorageService.SaveTranscriptionAsync(Summary, Transcript, DiarizedTranscript, DateTime.Now, _cts.Token);
+                await RefreshFilesAsync();
+            }
 
             StatusMessage = "Done ✓";
         }

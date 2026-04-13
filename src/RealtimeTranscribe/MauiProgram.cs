@@ -48,11 +48,24 @@ public static class MauiProgram
         builder.Services.AddSingleton(azureSettings);
 
         // ------------------------------------------------------------------
-        // File storage – output folder loaded from persisted Preferences
+        // Folder picker with security-scoped bookmark support (Mac Catalyst sandbox).
+        // TryRestoreAccess() resolves any previously-stored bookmark and calls
+        // StartAccessingSecurityScopedResource so the sandbox allows folder access
+        // on this launch without requiring the user to re-pick via the dialog.
+        // ------------------------------------------------------------------
+        var folderPickerService = new FolderPickerService();
+        var restoredPath = folderPickerService.TryRestoreAccess();
+        builder.Services.AddSingleton<IFolderPickerService>(folderPickerService);
+
+        // ------------------------------------------------------------------
+        // File storage – prefer bookmark-restored path; fall back to the path
+        // stored in Preferences (covers first-run and non-sandbox scenarios).
         // ------------------------------------------------------------------
         var fileStorageService = new FileStorageService
         {
-            OutputFolder = Preferences.Default.Get("OutputFolder", string.Empty)
+            OutputFolder = !string.IsNullOrEmpty(restoredPath)
+                ? restoredPath
+                : Preferences.Default.Get("OutputFolder", string.Empty)
         };
         builder.Services.AddSingleton<IFileStorageService>(fileStorageService);
 

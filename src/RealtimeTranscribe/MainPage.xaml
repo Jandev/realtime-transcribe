@@ -6,140 +6,286 @@
     xmlns:vm="clr-namespace:RealtimeTranscribe.ViewModels"
     Title="Transcribe">
 
-    <ScrollView>
-        <VerticalStackLayout
-            Padding="20,16"
-            Spacing="0">
+    <Grid ColumnDefinitions="220,*">
 
-            <!-- ── Status ─────────────────────────────────────────────── -->
-            <Label
-                HorizontalOptions="Center"
-                Margin="0,0,0,16"
-                FontSize="13"
-                Text="{Binding StatusMessage}"
-                TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray500}}" />
+        <!-- ══ Sidebar ═══════════════════════════════════════════════════ -->
+        <Grid
+            Grid.Column="0"
+            RowDefinitions="Auto,Auto,*"
+            BackgroundColor="{AppThemeBinding Light={StaticResource Secondary}, Dark={StaticResource SecondaryDark}}">
 
-            <!-- ── Record / Stop button ───────────────────────────────── -->
-            <Button
-                Command="{Binding ToggleRecordingCommand}"
-                FontSize="17"
-                FontAttributes="Bold"
-                HeightRequest="50"
-                HorizontalOptions="Fill"
-                Margin="0,0,0,12"
-                CornerRadius="10"
-                Text="{Binding RecordButtonText}"
-                BackgroundColor="{Binding IsRecording, Converter={StaticResource BoolToRecordColorConverter}}" />
-
-            <!-- ── Cancel button (visible while processing) ───────────── -->
-            <Button
-                Command="{Binding CancelCommand}"
-                HorizontalOptions="Fill"
-                Margin="0,0,0,20"
-                IsVisible="{Binding IsProcessing}"
-                Text="Cancel"
-                Style="{StaticResource SecondaryButton}" />
-
-            <!-- ── Transcript ─────────────────────────────────────────── -->
-            <Label
-                Style="{StaticResource SectionHeader}"
-                Text="TRANSCRIPT"
-                Margin="4,0,0,6" />
-
-            <Border Margin="0,0,0,4">
-                <Editor
-                    x:Name="TranscriptEditor"
-                    FontSize="{Binding ContentFontSize}"
-                    IsReadOnly="True"
-                    Margin="4,4"
-                    HeightRequest="150"
-                    Placeholder="Transcript will appear here after recording…"
-                    Text="{Binding Transcript}" />
-            </Border>
-
-            <!-- Transcript actions row -->
-            <HorizontalStackLayout
-                Margin="0,0,0,20"
-                HorizontalOptions="End"
-                Spacing="8">
+            <!-- Sidebar header -->
+            <Grid
+                Grid.Row="0"
+                ColumnDefinitions="*,Auto"
+                Padding="12,14,8,8">
+                <Label
+                    Grid.Column="0"
+                    Style="{StaticResource SectionHeader}"
+                    Text="TRANSCRIPTIONS"
+                    VerticalOptions="Center" />
                 <Button
-                    Command="{Binding DecreaseFontSizeCommand}"
-                    Text="A−"
+                    Grid.Column="1"
+                    Command="{Binding RefreshFilesCommand}"
+                    Text="↻"
+                    FontSize="16"
+                    FontAttributes="None"
+                    Padding="6,4"
+                    MinimumHeightRequest="32"
+                    MinimumWidthRequest="32"
+                    Style="{StaticResource SecondaryButton}"
+                    ToolTipProperties.Text="Refresh list" />
+            </Grid>
+
+            <!-- Filter / search -->
+            <Border
+                Grid.Row="1"
+                Margin="8,0,8,8"
+                StrokeThickness="0.5"
+                StrokeShape="RoundRectangle 8"
+                Padding="0">
+                <Entry
+                    Placeholder="Filter…"
                     FontSize="13"
-                    FontAttributes="None"
-                    Padding="10,6"
-                    MinimumWidthRequest="44"
-                    Style="{StaticResource SecondaryButton}"
-                    ToolTipProperties.Text="Decrease text size" />
-                <Button
-                    Command="{Binding IncreaseFontSizeCommand}"
-                    Text="A+"
-                    FontSize="15"
-                    FontAttributes="None"
-                    Padding="10,6"
-                    MinimumWidthRequest="44"
-                    Style="{StaticResource SecondaryButton}"
-                    ToolTipProperties.Text="Increase text size" />
-                <Button
-                    Command="{Binding CopyTranscriptCommand}"
-                    Text="Copy"
-                    Style="{StaticResource SecondaryButton}" />
-            </HorizontalStackLayout>
-
-            <!-- ── Speaker-Attributed Transcript ─────────────────────── -->
-            <Label
-                Style="{StaticResource SectionHeader}"
-                Text="SPEAKER-ATTRIBUTED TRANSCRIPT"
-                Margin="4,0,0,6" />
-
-            <Border Margin="0,0,0,4">
-                <Editor
-                    x:Name="DiarizedTranscriptEditor"
-                    FontSize="{Binding ContentFontSize}"
-                    IsReadOnly="True"
-                    Margin="4,4"
-                    HeightRequest="150"
-                    Placeholder="Speaker-attributed transcript will appear here after recording…"
-                    Text="{Binding DiarizedTranscript}" />
+                    Margin="6,0"
+                    Text="{Binding FilterText}"
+                    ClearButtonVisibility="WhileEditing" />
             </Border>
 
-            <HorizontalStackLayout
-                Margin="0,0,0,20"
-                HorizontalOptions="End">
+            <!-- Separator below header -->
+            <BoxView
+                Grid.Row="1"
+                HeightRequest="0.5"
+                VerticalOptions="End"
+                BackgroundColor="{AppThemeBinding Light={StaticResource Gray300}, Dark={StaticResource Gray800}}" />
+
+            <!-- Grouped file list -->
+            <CollectionView
+                Grid.Row="2"
+                x:Name="FileList"
+                ItemsSource="{Binding GroupedTranscriptionFiles}"
+                SelectedItem="{Binding SelectedTranscriptionFile}"
+                SelectionMode="Single"
+                IsGrouped="True">
+                <CollectionView.EmptyView>
+                    <Label
+                        Margin="12,16"
+                        FontSize="13"
+                        Text="No transcriptions yet."
+                        TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray600}}" />
+                </CollectionView.EmptyView>
+                <CollectionView.GroupHeaderTemplate>
+                    <DataTemplate>
+                        <Grid Padding="12,10,12,4">
+                            <Label
+                                FontSize="12"
+                                FontAttributes="Bold"
+                                Text="{Binding DateHeader}"
+                                TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray500}}" />
+                        </Grid>
+                    </DataTemplate>
+                </CollectionView.GroupHeaderTemplate>
+                <CollectionView.ItemTemplate>
+                    <DataTemplate>
+                        <Grid Padding="8,4,8,4">
+                            <Grid.GestureRecognizers>
+                                <TapGestureRecognizer NumberOfTapsRequired="1" Tapped="OnFileTapped" />
+                                <TapGestureRecognizer NumberOfTapsRequired="2" Tapped="OnFileDoubleTapped" />
+                            </Grid.GestureRecognizers>
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup Name="CommonStates">
+                                    <VisualState Name="Normal">
+                                        <VisualState.Setters>
+                                            <Setter Property="BackgroundColor" Value="Transparent" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState Name="Selected">
+                                        <VisualState.Setters>
+                                            <Setter Property="BackgroundColor" Value="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
+                            <!-- Display mode -->
+                            <Label
+                                FontSize="14"
+                                LineBreakMode="WordWrap"
+                                Padding="4,4"
+                                IsVisible="{Binding IsEditing, Converter={StaticResource InvertedBoolConverter}}"
+                                Text="{Binding DisplayName}"
+                                TextColor="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}">
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroup Name="CommonStates">
+                                        <VisualState Name="Normal">
+                                            <VisualState.Setters>
+                                                <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState Name="Selected">
+                                            <VisualState.Setters>
+                                                <Setter Property="TextColor" Value="{StaticResource White}" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                    </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                            </Label>
+                            <!-- Inline-rename mode -->
+                            <Entry
+                                x:Name="RenameEntry"
+                                FontSize="14"
+                                IsVisible="{Binding IsEditing}"
+                                Text="{Binding EditName}"
+                                Completed="OnRenameCompleted"
+                                Unfocused="OnRenameUnfocused" />
+                        </Grid>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+        </Grid>
+
+        <!-- Sidebar right border -->
+        <BoxView
+            Grid.Column="0"
+            WidthRequest="0.5"
+            HorizontalOptions="End"
+            BackgroundColor="{AppThemeBinding Light={StaticResource Gray300}, Dark={StaticResource Gray800}}" />
+
+        <!-- ══ Main Content ═══════════════════════════════════════════════ -->
+        <ScrollView Grid.Column="1">
+            <VerticalStackLayout
+                Padding="20,16"
+                Spacing="0">
+
+                <!-- ── Status ──────────────────────────────────────────── -->
+                <Label
+                    HorizontalOptions="Center"
+                    Margin="0,0,0,16"
+                    FontSize="13"
+                    Text="{Binding StatusMessage}"
+                    TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray500}}" />
+
+                <!-- ── Record / Stop button ────────────────────────────── -->
                 <Button
-                    Command="{Binding CopyDiarizedTranscriptCommand}"
-                    Text="Copy"
-                    Style="{StaticResource SecondaryButton}" />
-            </HorizontalStackLayout>
+                    Command="{Binding ToggleRecordingCommand}"
+                    FontSize="17"
+                    FontAttributes="Bold"
+                    HeightRequest="50"
+                    HorizontalOptions="Fill"
+                    Margin="0,0,0,12"
+                    CornerRadius="10"
+                    Text="{Binding RecordButtonText}"
+                    BackgroundColor="{Binding IsRecording, Converter={StaticResource BoolToRecordColorConverter}}" />
 
-            <!-- ── Summary &amp; Action Items ─────────────────────────── -->
-            <Label
-                Style="{StaticResource SectionHeader}"
-                Text="SUMMARY &amp; ACTION ITEMS"
-                Margin="4,0,0,6" />
-
-            <Border Margin="0,0,0,4">
-                <WebView
-                    x:Name="SummaryWebView"
-                    HeightRequest="120"
-                    MinimumHeightRequest="120"
-                    Navigated="OnSummaryWebViewNavigated">
-                    <WebView.Source>
-                        <HtmlWebViewSource Html="{Binding SummaryHtml}" />
-                    </WebView.Source>
-                </WebView>
-            </Border>
-
-            <HorizontalStackLayout
-                Margin="0,0,0,32"
-                HorizontalOptions="End">
+                <!-- ── Cancel button (visible while processing) ────────── -->
                 <Button
-                    Command="{Binding CopySummaryCommand}"
-                    Text="Copy"
+                    Command="{Binding CancelCommand}"
+                    HorizontalOptions="Fill"
+                    Margin="0,0,0,20"
+                    IsVisible="{Binding IsProcessing}"
+                    Text="Cancel"
                     Style="{StaticResource SecondaryButton}" />
-            </HorizontalStackLayout>
 
-        </VerticalStackLayout>
-    </ScrollView>
+                <!-- ── Summary &amp; Action Items (prominent) ─────────── -->
+                <Label
+                    Style="{StaticResource SectionHeader}"
+                    Text="SUMMARY &amp; ACTION ITEMS"
+                    Margin="4,0,0,6" />
+
+                <Border Margin="0,0,0,4">
+                    <WebView
+                        x:Name="SummaryWebView"
+                        HeightRequest="260"
+                        MinimumHeightRequest="120"
+                        Navigated="OnSummaryWebViewNavigated">
+                        <WebView.Source>
+                            <HtmlWebViewSource Html="{Binding SummaryHtml}" />
+                        </WebView.Source>
+                    </WebView>
+                </Border>
+
+                <HorizontalStackLayout
+                    Margin="0,0,0,28"
+                    HorizontalOptions="End"
+                    Spacing="8">
+                    <Button
+                        Command="{Binding DecreaseFontSizeCommand}"
+                        Text="A−"
+                        FontSize="13"
+                        FontAttributes="None"
+                        Padding="10,6"
+                        MinimumWidthRequest="44"
+                        Style="{StaticResource SecondaryButton}"
+                        ToolTipProperties.Text="Decrease text size" />
+                    <Button
+                        Command="{Binding IncreaseFontSizeCommand}"
+                        Text="A+"
+                        FontSize="15"
+                        FontAttributes="None"
+                        Padding="10,6"
+                        MinimumWidthRequest="44"
+                        Style="{StaticResource SecondaryButton}"
+                        ToolTipProperties.Text="Increase text size" />
+                    <Button
+                        Command="{Binding CopySummaryCommand}"
+                        Text="Copy"
+                        Style="{StaticResource SecondaryButton}" />
+                </HorizontalStackLayout>
+
+                <!-- ── Transcript (compact) ────────────────────────────── -->
+                <Label
+                    Style="{StaticResource SectionHeader}"
+                    Text="TRANSCRIPT"
+                    Margin="4,0,0,4" />
+
+                <Border Margin="0,0,0,4">
+                    <Editor
+                        x:Name="TranscriptEditor"
+                        FontSize="12"
+                        IsReadOnly="True"
+                        Margin="4,4"
+                        HeightRequest="100"
+                        Placeholder="Transcript will appear here after recording…"
+                        Text="{Binding Transcript}" />
+                </Border>
+
+                <HorizontalStackLayout
+                    Margin="0,0,0,16"
+                    HorizontalOptions="End">
+                    <Button
+                        Command="{Binding CopyTranscriptCommand}"
+                        Text="Copy"
+                        Style="{StaticResource SecondaryButton}" />
+                </HorizontalStackLayout>
+
+                <!-- ── Speaker-Attributed Transcript (compact) ────────── -->
+                <Label
+                    Style="{StaticResource SectionHeader}"
+                    Text="SPEAKER-ATTRIBUTED TRANSCRIPT"
+                    Margin="4,0,0,4" />
+
+                <Border Margin="0,0,0,4">
+                    <Editor
+                        x:Name="DiarizedTranscriptEditor"
+                        FontSize="12"
+                        IsReadOnly="True"
+                        Margin="4,4"
+                        HeightRequest="100"
+                        Placeholder="Speaker-attributed transcript will appear here after recording…"
+                        Text="{Binding DiarizedTranscript}" />
+                </Border>
+
+                <HorizontalStackLayout
+                    Margin="0,0,0,32"
+                    HorizontalOptions="End">
+                    <Button
+                        Command="{Binding CopyDiarizedTranscriptCommand}"
+                        Text="Copy"
+                        Style="{StaticResource SecondaryButton}" />
+                </HorizontalStackLayout>
+
+            </VerticalStackLayout>
+        </ScrollView>
+
+    </Grid>
 
 </ContentPage>
