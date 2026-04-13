@@ -121,7 +121,7 @@ public sealed class FolderPickerService : IFolderPickerService, IDisposable
 
     // ── Inner delegate ──────────────────────────────────────────────────────
 
-    private sealed class PickerDelegate : UIDocumentPickerDelegate
+    private sealed class PickerDelegate : NSObject, IUIDocumentPickerDelegate
     {
         private readonly TaskCompletionSource<string?> _tcs;
         private readonly FolderPickerService _service;
@@ -132,7 +132,8 @@ public sealed class FolderPickerService : IFolderPickerService, IDisposable
             _service = service;
         }
 
-        public override void DidPickDocumentAtUrls(UIDocumentPickerViewController controller, NSUrl[] urls)
+        [Export("documentPicker:didPickDocumentsAtURLs:")]
+        public void DidPickDocumentsAtUrls(UIDocumentPickerViewController controller, NSUrl[] urls)
         {
             var url = urls.FirstOrDefault();
             if (url != null)
@@ -150,7 +151,8 @@ public sealed class FolderPickerService : IFolderPickerService, IDisposable
             }
         }
 
-        public override void WasCancelled(UIDocumentPickerViewController controller)
+        [Export("documentPickerWasCancelled:")]
+        public void WasCancelled(UIDocumentPickerViewController controller)
             => _tcs.TrySetResult(null);
     }
 }
