@@ -12,7 +12,7 @@
         <Grid
             Grid.Column="0"
             RowDefinitions="Auto,Auto,*"
-            BackgroundColor="{AppThemeBinding Light={StaticResource CardBackground}, Dark={StaticResource CardBackgroundDark}}">
+            BackgroundColor="{AppThemeBinding Light={StaticResource Secondary}, Dark={StaticResource SecondaryDark}}">
 
             <!-- Sidebar header -->
             <Grid
@@ -46,7 +46,7 @@
                 Padding="0">
                 <Entry
                     Placeholder="Filter…"
-                    FontSize="12"
+                    FontSize="13"
                     Margin="6,0"
                     Text="{Binding FilterText}"
                     ClearButtonVisibility="WhileEditing" />
@@ -70,7 +70,7 @@
                 <CollectionView.EmptyView>
                     <Label
                         Margin="12,16"
-                        FontSize="12"
+                        FontSize="13"
                         Text="No transcriptions yet."
                         TextColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray600}}" />
                 </CollectionView.EmptyView>
@@ -78,7 +78,7 @@
                     <DataTemplate>
                         <Grid Padding="12,10,12,4">
                             <Label
-                                FontSize="11"
+                                FontSize="12"
                                 FontAttributes="Bold"
                                 Text="{Binding DateHeader}"
                                 TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray500}}" />
@@ -87,22 +87,52 @@
                 </CollectionView.GroupHeaderTemplate>
                 <CollectionView.ItemTemplate>
                     <DataTemplate>
-                        <Grid Padding="12,6">
+                        <Grid Padding="8,4,8,4">
                             <Grid.GestureRecognizers>
                                 <TapGestureRecognizer NumberOfTapsRequired="1" Tapped="OnFileTapped" />
                                 <TapGestureRecognizer NumberOfTapsRequired="2" Tapped="OnFileDoubleTapped" />
                             </Grid.GestureRecognizers>
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup Name="CommonStates">
+                                    <VisualState Name="Normal">
+                                        <VisualState.Setters>
+                                            <Setter Property="BackgroundColor" Value="Transparent" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState Name="Selected">
+                                        <VisualState.Setters>
+                                            <Setter Property="BackgroundColor" Value="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
                             <!-- Display mode -->
                             <Label
-                                FontSize="12"
+                                FontSize="14"
                                 LineBreakMode="WordWrap"
+                                Padding="4,4"
                                 IsVisible="{Binding IsEditing, Converter={StaticResource InvertedBoolConverter}}"
                                 Text="{Binding DisplayName}"
-                                TextColor="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}" />
+                                TextColor="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}">
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroup Name="CommonStates">
+                                        <VisualState Name="Normal">
+                                            <VisualState.Setters>
+                                                <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState Name="Selected">
+                                            <VisualState.Setters>
+                                                <Setter Property="TextColor" Value="{StaticResource White}" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                    </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                            </Label>
                             <!-- Inline-rename mode -->
                             <Entry
                                 x:Name="RenameEntry"
-                                FontSize="12"
+                                FontSize="14"
                                 IsVisible="{Binding IsEditing}"
                                 Text="{Binding EditName}"
                                 Completed="OnRenameCompleted"

@@ -1,4 +1,3 @@
-using CommunityToolkit.Maui.Storage;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using RealtimeTranscribe.Models;
@@ -17,12 +16,14 @@ public partial class SettingsViewModel : ObservableObject
     private readonly AzureOpenAISettings _settings;
     private readonly ITranscriptionService _transcriptionService;
     private readonly IFileStorageService _fileStorageService;
+    private readonly IFolderPickerService _folderPickerService;
 
-    public SettingsViewModel(AzureOpenAISettings settings, ITranscriptionService transcriptionService, IFileStorageService fileStorageService)
+    public SettingsViewModel(AzureOpenAISettings settings, ITranscriptionService transcriptionService, IFileStorageService fileStorageService, IFolderPickerService folderPickerService)
     {
         _settings = settings;
         _transcriptionService = transcriptionService;
         _fileStorageService = fileStorageService;
+        _folderPickerService = folderPickerService;
 
         // Load persisted preferences; fall back to values from appsettings.json
         _endpoint = Preferences.Default.Get(nameof(Endpoint), _settings.Endpoint);
@@ -53,9 +54,9 @@ public partial class SettingsViewModel : ObservableObject
     [RelayCommand]
     private async Task BrowseOutputFolderAsync()
     {
-        var result = await FolderPicker.Default.PickAsync(CancellationToken.None);
-        if (result.IsSuccessful)
-            OutputFolder = result.Folder.Path;
+        var path = await _folderPickerService.PickFolderAsync();
+        if (!string.IsNullOrEmpty(path))
+            OutputFolder = path;
     }
 
     [RelayCommand]
