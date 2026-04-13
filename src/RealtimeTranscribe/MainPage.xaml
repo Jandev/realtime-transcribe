@@ -89,6 +89,7 @@
                     <DataTemplate>
                         <Grid Padding="12,6">
                             <Grid.GestureRecognizers>
+                                <TapGestureRecognizer NumberOfTapsRequired="1" Tapped="OnFileTapped" />
                                 <TapGestureRecognizer NumberOfTapsRequired="2" Tapped="OnFileDoubleTapped" />
                             </Grid.GestureRecognizers>
                             <!-- Display mode -->

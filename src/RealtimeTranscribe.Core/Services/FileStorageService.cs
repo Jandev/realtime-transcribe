@@ -30,7 +30,7 @@ public partial class FileStorageService : IFileStorageService
         sb.AppendLine(SummaryHeader);
         sb.AppendLine();
         if (!string.IsNullOrEmpty(summary))
-            sb.AppendLine(summary);
+            sb.AppendLine(BumpHeadings(summary));
         sb.AppendLine();
 
         sb.AppendLine(TranscriptHeader);
@@ -107,7 +107,7 @@ public partial class FileStorageService : IFileStorageService
             var body = parts[i + 1].Trim();
 
             if (heading.Equals(SummaryHeader, StringComparison.OrdinalIgnoreCase))
-                summary = body;
+                summary = UnbumpHeadings(body);
             else if (heading.Equals(TranscriptHeader, StringComparison.OrdinalIgnoreCase))
                 transcript = body;
             else if (heading.Equals(DiarizedTranscriptHeader, StringComparison.OrdinalIgnoreCase))
@@ -120,6 +120,28 @@ public partial class FileStorageService : IFileStorageService
     /// <summary>Matches only the three known section heading lines used as delimiters.</summary>
     [GeneratedRegex(@"^(## Summary and action items|## Transcript|## Speaker attributed transcript)$", RegexOptions.Multiline)]
     private static partial Regex SectionRegex();
+
+    /// <summary>Matches markdown headings (## or more) at the start of a line.</summary>
+    [GeneratedRegex(@"^(#{2,})\s", RegexOptions.Multiline)]
+    private static partial Regex HeadingRegex();
+
+    /// <summary>
+    /// Bumps all <c>##</c> (and deeper) headings in the text one level deeper so they
+    /// nest properly under the <c>## Summary and action items</c> section header.
+    /// For example, <c>## Summary</c> becomes <c>### Summary</c>.
+    /// </summary>
+    public static string BumpHeadings(string text) =>
+        HeadingRegex().Replace(text, m => "#" + m.Value);
+
+    /// <summary>
+    /// Reverses <see cref="BumpHeadings"/>: removes one <c>#</c> from headings that are
+    /// <c>###</c> or deeper, restoring the original heading levels.
+    /// </summary>
+    [GeneratedRegex(@"^(#{3,})\s", RegexOptions.Multiline)]
+    private static partial Regex BumpedHeadingRegex();
+
+    public static string UnbumpHeadings(string text) =>
+        BumpedHeadingRegex().Replace(text, m => m.Groups[1].Value[1..] + " ");
 
     /// <inheritdoc/>
     public Task<TranscriptionFile> RenameSummaryAsync(string oldFilePath, string newName, CancellationToken cancellationToken = default)

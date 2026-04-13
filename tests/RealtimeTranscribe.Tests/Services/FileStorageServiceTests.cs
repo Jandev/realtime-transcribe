@@ -331,6 +331,49 @@ public class FileStorageServiceTests : IDisposable
         Assert.Equal(diarized, result.DiarizedTranscript);
     }
 
+    [Fact]
+    public async Task SaveAndLoad_SummaryWithHeadings_RoundTrips()
+    {
+        var service = CreateService(_tempDir);
+        var timestamp = new DateTime(2024, 3, 15, 14, 30, 0);
+        var summary = "## Summary\n\nSome summary content.\n\n## Action Items\n\n- Item 1\n- Item 2";
+
+        await service.SaveTranscriptionAsync(summary, "transcript", "diarized", timestamp);
+
+        // Verify the file contains bumped headings (### instead of ##)
+        var filePath = Path.Combine(_tempDir, "20240315 1430.md");
+        var rawContent = await File.ReadAllTextAsync(filePath);
+        Assert.Contains("### Summary", rawContent);
+        Assert.Contains("### Action Items", rawContent);
+        Assert.DoesNotContain("\n## Summary\n", rawContent);
+        Assert.DoesNotContain("\n## Action Items\n", rawContent);
+
+        // Verify round-trip: loading restores original heading levels
+        var result = await service.LoadTranscriptionAsync(filePath);
+        Assert.Equal(summary, result.Summary);
+    }
+
+    [Fact]
+    public void BumpHeadings_BumpsAllLevels()
+    {
+        var input = "## Summary\n\nSome text.\n\n## Action Items\n\n- Item 1";
+        var bumped = FileStorageService.BumpHeadings(input);
+
+        Assert.Contains("### Summary", bumped);
+        Assert.Contains("### Action Items", bumped);
+        Assert.DoesNotContain("\n## Summary", bumped);
+    }
+
+    [Fact]
+    public void UnbumpHeadings_ReversesOneLevelBump()
+    {
+        var input = "### Summary\n\nSome text.\n\n### Action Items\n\n- Item 1";
+        var unbumped = FileStorageService.UnbumpHeadings(input);
+
+        Assert.Contains("## Summary", unbumped);
+        Assert.Contains("## Action Items", unbumped);
+    }
+
     // ── RenameSummaryAsync ────────────────────────────────────────────────
 
     [Fact]

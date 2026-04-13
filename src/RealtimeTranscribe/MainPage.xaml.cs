@@ -15,11 +15,10 @@ public partial class MainPage : ContentPage
         viewModel.PropertyChanged += OnViewModelPropertyChanged;
     }
 
-    protected override void OnAppearing()
+    protected override async void OnAppearing()
     {
         base.OnAppearing();
-        if (_viewModel.RefreshFilesCommand is IAsyncRelayCommand asyncCmd)
-            _ = asyncCmd.ExecuteAsync(null);
+        await _viewModel.RefreshFilesCommand.ExecuteAsync(null);
     }
 
     private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -38,6 +37,14 @@ public partial class MainPage : ContentPage
     }
 
     // ── Inline rename handlers ───────────────────────────────────────────
+
+    private void OnFileTapped(object? sender, TappedEventArgs e)
+    {
+        if (sender is VisualElement element && element.BindingContext is TranscriptionFileItem item)
+        {
+            _viewModel.SelectedTranscriptionFile = item;
+        }
+    }
 
     private void OnFileDoubleTapped(object? sender, TappedEventArgs e)
     {

@@ -48,11 +48,6 @@ public partial class MainViewModel : ObservableObject
         // Restore persisted font size, clamping any out-of-range value to a safe default.
         _contentFontSize = TextScaleService.Restore(
             Preferences.Default.Get(TextScaleService.PreferenceKey, TextScaleService.Default));
-
-        // Eagerly load the sidebar file list so it appears immediately on startup.
-        // OnAppearing also calls RefreshFilesAsync, but on some platforms the initial
-        // tab's OnAppearing does not fire reliably in Shell-based navigation.
-        _ = RefreshFilesAsync();
     }
 
     [ObservableProperty]
