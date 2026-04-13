@@ -11,10 +11,14 @@ namespace RealtimeTranscribe.Services;
 /// access to the chosen folder after an app restart without requiring the user to
 /// re-pick.
 /// </summary>
-public sealed class FolderPickerService : IFolderPickerService
+public sealed class FolderPickerService : IFolderPickerService, IDisposable
 {
     // Versioned key so a stale bookmark from an older format never causes a crash on restore.
     private const string BookmarkPrefsKey = "OutputFolderBookmark_v1";
+
+    // The URL whose security-scoped access is currently active.  Kept so we can call
+    // StopAccessingSecurityScopedResource when the user picks a different folder.
+    private NSUrl? _activeUrl;
 
     /// <inheritdoc/>
     public Task<string?> PickFolderAsync()
@@ -31,7 +35,7 @@ public sealed class FolderPickerService : IFolderPickerService
 
             // Keep a strong reference to the delegate so the GC does not collect it
             // before the picker is dismissed.
-            var del = new PickerDelegate(tcs);
+            var del = new PickerDelegate(tcs, this);
             picker.Delegate = del;
 
             Platform.GetCurrentUIViewController()!.PresentViewController(picker, true, null);
@@ -61,8 +65,7 @@ public sealed class FolderPickerService : IFolderPickerService
             if (url == null || error != null)
                 return null;
 
-            // Re-establish security-scoped access for this session.
-            url.StartAccessingSecurityScopedResource();
+            ActivateUrl(url);
 
             // Refresh a stale bookmark while we have access.
             if (isStale)
@@ -74,6 +77,24 @@ public sealed class FolderPickerService : IFolderPickerService
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// Stops access to any previously-active security-scoped URL and starts accessing
+    /// the new one, keeping only the most-recently-selected folder's access open.
+    /// </summary>
+    internal void ActivateUrl(NSUrl url)
+    {
+        _activeUrl?.StopAccessingSecurityScopedResource();
+        _activeUrl = url;
+        url.StartAccessingSecurityScopedResource();
+    }
+
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        _activeUrl?.StopAccessingSecurityScopedResource();
+        _activeUrl = null;
     }
 
     /// <summary>
@@ -103,18 +124,24 @@ public sealed class FolderPickerService : IFolderPickerService
     private sealed class PickerDelegate : UIDocumentPickerDelegate
     {
         private readonly TaskCompletionSource<string?> _tcs;
+        private readonly FolderPickerService _service;
 
-        public PickerDelegate(TaskCompletionSource<string?> tcs) => _tcs = tcs;
+        public PickerDelegate(TaskCompletionSource<string?> tcs, FolderPickerService service)
+        {
+            _tcs = tcs;
+            _service = service;
+        }
 
         public override void DidPickDocumentsAtUrls(UIDocumentPickerViewController controller, NSUrl[] urls)
         {
             var url = urls.FirstOrDefault();
             if (url != null)
             {
-                // The URL returned by UIDocumentPickerViewController already has
-                // temporary security-scoped access; persist a bookmark from it so
-                // the app can regain access after the next launch.
+                // The URL returned by UIDocumentPickerViewController already has temporary
+                // security-scoped access; persist a bookmark so the app can regain access
+                // after the next launch, and activate access for this session.
                 PersistBookmark(url);
+                _service.ActivateUrl(url);
                 _tcs.TrySetResult(url.Path);
             }
             else
