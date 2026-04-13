@@ -117,8 +117,8 @@ public partial class FileStorageService : IFileStorageService
         return new TranscriptionContent(Summary: summary, Transcript: transcript, DiarizedTranscript: diarized);
     }
 
-    /// <summary>Matches <c>## Heading text</c> lines used as section delimiters.</summary>
-    [GeneratedRegex(@"^(## .+)$", RegexOptions.Multiline)]
+    /// <summary>Matches only the three known section heading lines used as delimiters.</summary>
+    [GeneratedRegex(@"^(## Summary and action items|## Transcript|## Speaker attributed transcript)$", RegexOptions.Multiline)]
     private static partial Regex SectionRegex();
 
     /// <inheritdoc/>
