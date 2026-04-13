@@ -52,6 +52,9 @@ public class FileStorageService : IFileStorageService
         var newFileName = newName.Trim() + ".md";
         var newFilePath = Path.Combine(directory, newFileName);
 
+        if (File.Exists(newFilePath))
+            throw new IOException($"A file named '{newFileName}' already exists.");
+
         File.Move(oldFilePath, newFilePath);
 
         var info = new FileInfo(newFilePath);

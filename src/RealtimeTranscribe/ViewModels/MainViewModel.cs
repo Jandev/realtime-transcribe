@@ -240,16 +240,16 @@ public partial class MainViewModel : ObservableObject
     /// <summary>Applies <see cref="FilterText"/> and groups the cached file list by date.</summary>
     private void RebuildGroupedFiles()
     {
-        var filtered = string.IsNullOrWhiteSpace(FilterText)
-            ? _allFiles
-            : _allFiles.Where(f =>
-                Path.GetFileNameWithoutExtension(f.FilePath)
-                    .Contains(FilterText, StringComparison.OrdinalIgnoreCase)
-                || f.DisplayName.Contains(FilterText, StringComparison.OrdinalIgnoreCase))
-                .ToList();
+        var items = _allFiles.Select(f => new TranscriptionFileItem(f));
 
-        var groups = filtered
-            .Select(f => new TranscriptionFileItem(f))
+        if (!string.IsNullOrWhiteSpace(FilterText))
+        {
+            items = items.Where(item =>
+                item.FileNameStem.Contains(FilterText, StringComparison.OrdinalIgnoreCase)
+                || item.DisplayName.Contains(FilterText, StringComparison.OrdinalIgnoreCase));
+        }
+
+        var groups = items
             .GroupBy(item => item.DateKey)
             .OrderByDescending(g => g.Key)
             .Select(g => new TranscriptionFileGroup(g.Key, g));

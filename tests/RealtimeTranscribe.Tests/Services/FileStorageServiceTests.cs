@@ -309,4 +309,17 @@ public class FileStorageServiceTests : IDisposable
         Assert.Single(files);
         Assert.Contains("Retrospective", files[0].DisplayName);
     }
+
+    [Fact]
+    public async Task RenameSummaryAsync_ThrowsWhenTargetAlreadyExists()
+    {
+        var service = CreateService(_tempDir);
+        await service.SaveSummaryAsync("first", new DateTime(2024, 3, 15, 14, 30, 0));
+        await service.SaveSummaryAsync("second", new DateTime(2024, 3, 16, 10, 0, 0));
+        // Rename the second file to the same name as the first
+        var secondPath = Path.Combine(_tempDir, "20240316 1000.md");
+
+        await Assert.ThrowsAsync<IOException>(
+            () => service.RenameSummaryAsync(secondPath, "20240315 1430"));
+    }
 }
