@@ -266,9 +266,12 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task CommitRenameAsync(TranscriptionFileItem? item)
     {
-        if (item is null || !item.IsEditing)
+        if (item is null)
             return;
 
+        // Capture EditName immediately: pressing Enter fires Completed then Unfocused in quick
+        // succession.  OnRenameUnfocused calls CancelEdit() (which clears IsEditing) before this
+        // async method resumes, so we must not gate on IsEditing here.
         var newName = item.EditName?.Trim();
 
         // No change or empty — cancel.
