@@ -1,24 +1,53 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using RealtimeTranscribe.Models;
 
 namespace RealtimeTranscribe.Services;
 
 /// <inheritdoc cref="IFileStorageService"/>
-public class FileStorageService : IFileStorageService
+public partial class FileStorageService : IFileStorageService
 {
+    // Section headers used when writing and parsing transcription files.
+    private const string SummaryHeader = "## Summary and action items";
+    private const string TranscriptHeader = "## Transcript";
+    private const string DiarizedTranscriptHeader = "## Speaker attributed transcript";
+
     /// <inheritdoc/>
     public string? OutputFolder { get; set; }
 
     /// <inheritdoc/>
-    public async Task SaveSummaryAsync(string summary, DateTime timestamp, CancellationToken cancellationToken = default)
+    public async Task SaveTranscriptionAsync(string? summary, string? transcript, string? diarizedTranscript, DateTime timestamp, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(OutputFolder) || string.IsNullOrEmpty(summary))
+        if (string.IsNullOrEmpty(OutputFolder))
             return;
+
+        // At least one section must have content.
+        if (string.IsNullOrEmpty(summary) && string.IsNullOrEmpty(transcript) && string.IsNullOrEmpty(diarizedTranscript))
+            return;
+
+        var sb = new StringBuilder();
+
+        sb.AppendLine(SummaryHeader);
+        sb.AppendLine();
+        if (!string.IsNullOrEmpty(summary))
+            sb.AppendLine(summary);
+        sb.AppendLine();
+
+        sb.AppendLine(TranscriptHeader);
+        sb.AppendLine();
+        if (!string.IsNullOrEmpty(transcript))
+            sb.AppendLine(transcript);
+        sb.AppendLine();
+
+        sb.AppendLine(DiarizedTranscriptHeader);
+        sb.AppendLine();
+        if (!string.IsNullOrEmpty(diarizedTranscript))
+            sb.AppendLine(diarizedTranscript);
 
         var fileName = timestamp.ToString("yyyyMMdd HHmm") + ".md";
         var filePath = Path.Combine(OutputFolder, fileName);
 
-        await File.WriteAllTextAsync(filePath, summary, Encoding.UTF8, cancellationToken);
+        await File.WriteAllTextAsync(filePath, sb.ToString(), Encoding.UTF8, cancellationToken);
     }
 
     /// <inheritdoc/>
@@ -44,6 +73,53 @@ public class FileStorageService : IFileStorageService
     {
         return File.ReadAllTextAsync(filePath, Encoding.UTF8, cancellationToken);
     }
+
+    /// <inheritdoc/>
+    public async Task<TranscriptionContent> LoadTranscriptionAsync(string filePath, CancellationToken cancellationToken = default)
+    {
+        var content = await File.ReadAllTextAsync(filePath, Encoding.UTF8, cancellationToken);
+        return ParseSections(content);
+    }
+
+    /// <summary>
+    /// Parses the markdown content into sections.  If the file uses the new sectioned format
+    /// (<c>## Summary and action items</c>, <c>## Transcript</c>, <c>## Speaker attributed transcript</c>)
+    /// the content under each heading is returned in the corresponding property.
+    /// For legacy files that lack these headings, the entire content is treated as the summary.
+    /// </summary>
+    public static TranscriptionContent ParseSections(string content)
+    {
+        // Split on ## headings.  Because the regex uses a capturing group,
+        // the matched headings are interleaved with the body segments:
+        //   [preamble, heading1, body1, heading2, body2, ...]
+        var parts = SectionRegex().Split(content);
+
+        // No recognised headings → legacy file, treat everything as summary.
+        if (parts.Length <= 1)
+            return new TranscriptionContent(Summary: content.Trim(), Transcript: string.Empty, DiarizedTranscript: string.Empty);
+
+        string summary = string.Empty, transcript = string.Empty, diarized = string.Empty;
+
+        // Walk pairs: parts[1]=heading, parts[2]=body, parts[3]=heading, parts[4]=body, …
+        for (int i = 1; i + 1 < parts.Length; i += 2)
+        {
+            var heading = parts[i].Trim();
+            var body = parts[i + 1].Trim();
+
+            if (heading.Equals(SummaryHeader, StringComparison.OrdinalIgnoreCase))
+                summary = body;
+            else if (heading.Equals(TranscriptHeader, StringComparison.OrdinalIgnoreCase))
+                transcript = body;
+            else if (heading.Equals(DiarizedTranscriptHeader, StringComparison.OrdinalIgnoreCase))
+                diarized = body;
+        }
+
+        return new TranscriptionContent(Summary: summary, Transcript: transcript, DiarizedTranscript: diarized);
+    }
+
+    /// <summary>Matches <c>## Heading text</c> lines used as section delimiters.</summary>
+    [GeneratedRegex(@"^(## .+)$", RegexOptions.Multiline)]
+    private static partial Regex SectionRegex();
 
     /// <inheritdoc/>
     public Task<TranscriptionFile> RenameSummaryAsync(string oldFilePath, string newName, CancellationToken cancellationToken = default)

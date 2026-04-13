@@ -5,7 +5,7 @@ namespace RealtimeTranscribe.Tests.Services;
 
 /// <summary>
 /// Unit tests for <see cref="FileStorageService"/>.
-/// Covers guard clauses, filename format, and file content.
+/// Covers guard clauses, filename format, file content, section parsing, and rename.
 /// </summary>
 public class FileStorageServiceTests : IDisposable
 {
@@ -26,47 +26,45 @@ public class FileStorageServiceTests : IDisposable
     private static FileStorageService CreateService(string? outputFolder = null) =>
         new() { OutputFolder = outputFolder };
 
+    // ── SaveTranscriptionAsync ────────────────────────────────────────────
+
     [Fact]
-    public async Task SaveSummaryAsync_WithNoOutputFolder_DoesNotThrowAndWritesNoFile()
+    public async Task SaveTranscriptionAsync_WithNoOutputFolder_DoesNotThrowAndWritesNoFile()
     {
         var service = CreateService(outputFolder: null);
 
-        // Should complete without throwing; no files written anywhere
-        await service.SaveSummaryAsync("# Summary\n\nTest", DateTime.Now);
+        await service.SaveTranscriptionAsync("# Summary", "transcript", "diarized", DateTime.Now);
 
-        // Verify nothing was created in our controlled temp directory
         Assert.Empty(Directory.GetFiles(_tempDir, "*.md"));
     }
 
     [Fact]
-    public async Task SaveSummaryAsync_WithEmptyOutputFolder_DoesNotThrowAndWritesNoFile()
+    public async Task SaveTranscriptionAsync_WithEmptyOutputFolder_DoesNotThrowAndWritesNoFile()
     {
         var service = CreateService(outputFolder: string.Empty);
 
-        // Should complete without throwing; no files written anywhere
-        await service.SaveSummaryAsync("# Summary\n\nTest", DateTime.Now);
+        await service.SaveTranscriptionAsync("# Summary", "transcript", "diarized", DateTime.Now);
 
-        // Verify nothing was created in our controlled temp directory
         Assert.Empty(Directory.GetFiles(_tempDir, "*.md"));
     }
 
     [Fact]
-    public async Task SaveSummaryAsync_WithEmptySummary_DoesNotWriteFile()
+    public async Task SaveTranscriptionAsync_WithAllEmptyContent_DoesNotWriteFile()
     {
         var service = CreateService(_tempDir);
 
-        await service.SaveSummaryAsync(string.Empty, DateTime.Now);
+        await service.SaveTranscriptionAsync(string.Empty, string.Empty, string.Empty, DateTime.Now);
 
         Assert.Empty(Directory.GetFiles(_tempDir, "*.md"));
     }
 
     [Fact]
-    public async Task SaveSummaryAsync_WritesMarkdownFileWithCorrectName()
+    public async Task SaveTranscriptionAsync_WritesMarkdownFileWithCorrectName()
     {
         var service = CreateService(_tempDir);
         var timestamp = new DateTime(2024, 3, 15, 14, 30, 0);
 
-        await service.SaveSummaryAsync("# Summary\n\nContent", timestamp);
+        await service.SaveTranscriptionAsync("Summary content", "transcript", "diarized", timestamp);
 
         var files = Directory.GetFiles(_tempDir, "*.md");
         Assert.Single(files);
@@ -74,45 +72,87 @@ public class FileStorageServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task SaveSummaryAsync_WritesCorrectContent()
+    public async Task SaveTranscriptionAsync_ContainsAllThreeSections()
     {
         var service = CreateService(_tempDir);
         var timestamp = new DateTime(2024, 3, 15, 14, 30, 0);
-        var summary = "## Summary\n\nThis is a test.\n\n## Action Items\n\n- Item 1\n- Item 2";
 
-        await service.SaveSummaryAsync(summary, timestamp);
+        await service.SaveTranscriptionAsync("My summary", "My transcript", "Speaker A: hello", timestamp);
 
         var filePath = Path.Combine(_tempDir, "20240315 1430.md");
         var content = await File.ReadAllTextAsync(filePath);
-        Assert.Equal(summary, content);
+
+        Assert.Contains("## Summary and action items", content);
+        Assert.Contains("My summary", content);
+        Assert.Contains("## Transcript", content);
+        Assert.Contains("My transcript", content);
+        Assert.Contains("## Speaker attributed transcript", content);
+        Assert.Contains("Speaker A: hello", content);
     }
 
     [Fact]
-    public async Task SaveSummaryAsync_WritesFileAsUtf8()
+    public async Task SaveTranscriptionAsync_SummaryAppearsFirst()
+    {
+        var service = CreateService(_tempDir);
+        var timestamp = new DateTime(2024, 3, 15, 14, 30, 0);
+
+        await service.SaveTranscriptionAsync("My summary", "My transcript", "Diarized text", timestamp);
+
+        var filePath = Path.Combine(_tempDir, "20240315 1430.md");
+        var content = await File.ReadAllTextAsync(filePath);
+
+        var summaryIdx = content.IndexOf("## Summary and action items");
+        var transcriptIdx = content.IndexOf("## Transcript");
+        var diarizedIdx = content.IndexOf("## Speaker attributed transcript");
+
+        Assert.True(summaryIdx < transcriptIdx, "Summary should appear before Transcript");
+        Assert.True(transcriptIdx < diarizedIdx, "Transcript should appear before Speaker attributed transcript");
+    }
+
+    [Fact]
+    public async Task SaveTranscriptionAsync_WritesFileAsUtf8()
     {
         var service = CreateService(_tempDir);
         var timestamp = new DateTime(2024, 1, 1, 9, 0, 0);
-        var summary = "# Samenvatting\n\nActiepunten: **verplicht**";
 
-        await service.SaveSummaryAsync(summary, timestamp);
+        await service.SaveTranscriptionAsync("Samenvatting: **verplicht**", "émoji 🎙", null, timestamp);
 
         var filePath = Path.Combine(_tempDir, "20240101 0900.md");
         var content = await File.ReadAllTextAsync(filePath, System.Text.Encoding.UTF8);
-        Assert.Equal(summary, content);
+        Assert.Contains("Samenvatting: **verplicht**", content);
+        Assert.Contains("émoji 🎙", content);
     }
 
     [Fact]
-    public async Task SaveSummaryAsync_CanOverwriteFileWithSameTimestamp()
+    public async Task SaveTranscriptionAsync_CanOverwriteFileWithSameTimestamp()
     {
         var service = CreateService(_tempDir);
         var timestamp = new DateTime(2024, 6, 10, 11, 0, 0);
 
-        await service.SaveSummaryAsync("First version", timestamp);
-        await service.SaveSummaryAsync("Second version", timestamp);
+        await service.SaveTranscriptionAsync("First version", null, null, timestamp);
+        await service.SaveTranscriptionAsync("Second version", null, null, timestamp);
 
         var filePath = Path.Combine(_tempDir, "20240610 1100.md");
         var content = await File.ReadAllTextAsync(filePath);
-        Assert.Equal("Second version", content);
+        Assert.Contains("Second version", content);
+        Assert.DoesNotContain("First version", content);
+    }
+
+    [Fact]
+    public async Task SaveTranscriptionAsync_WithOnlySummary_StillWritesAllSections()
+    {
+        var service = CreateService(_tempDir);
+        var timestamp = new DateTime(2024, 3, 15, 14, 30, 0);
+
+        await service.SaveTranscriptionAsync("Just a summary", null, null, timestamp);
+
+        var filePath = Path.Combine(_tempDir, "20240315 1430.md");
+        var content = await File.ReadAllTextAsync(filePath);
+
+        Assert.Contains("## Summary and action items", content);
+        Assert.Contains("Just a summary", content);
+        Assert.Contains("## Transcript", content);
+        Assert.Contains("## Speaker attributed transcript", content);
     }
 
     // ── ListSummariesAsync ───────────────────────────────────────────────
@@ -166,14 +206,13 @@ public class FileStorageServiceTests : IDisposable
         var t2 = new DateTime(2024, 3, 15, 14, 30, 0);
         var t3 = new DateTime(2024, 6, 10, 11, 0, 0);
 
-        await service.SaveSummaryAsync("A", t1);
-        await service.SaveSummaryAsync("B", t2);
-        await service.SaveSummaryAsync("C", t3);
+        await service.SaveTranscriptionAsync("A", null, null, t1);
+        await service.SaveTranscriptionAsync("B", null, null, t2);
+        await service.SaveTranscriptionAsync("C", null, null, t3);
 
         var result = await service.ListSummariesAsync();
 
         Assert.Equal(3, result.Count);
-        // Newest file written last; order is by LastWriteTime descending
         Assert.All(result, f => Assert.EndsWith(".md", f.FilePath));
     }
 
@@ -183,7 +222,7 @@ public class FileStorageServiceTests : IDisposable
         var service = CreateService(_tempDir);
         var timestamp = new DateTime(2024, 3, 15, 14, 30, 0);
 
-        await service.SaveSummaryAsync("content", timestamp);
+        await service.SaveTranscriptionAsync("content", null, null, timestamp);
 
         var result = await service.ListSummariesAsync();
 
@@ -197,7 +236,7 @@ public class FileStorageServiceTests : IDisposable
         var service = CreateService(_tempDir);
         var timestamp = new DateTime(2024, 3, 15, 14, 30, 0);
 
-        await service.SaveSummaryAsync("content", timestamp);
+        await service.SaveTranscriptionAsync("content", null, null, timestamp);
 
         var result = await service.ListSummariesAsync();
 
@@ -212,14 +251,13 @@ public class FileStorageServiceTests : IDisposable
     {
         var service = CreateService(_tempDir);
         var timestamp = new DateTime(2024, 6, 10, 11, 0, 0);
-        var expected = "## Summary\n\nTest content";
 
-        await service.SaveSummaryAsync(expected, timestamp);
+        await service.SaveTranscriptionAsync("Test content", null, null, timestamp);
         var filePath = Path.Combine(_tempDir, "20240610 1100.md");
 
         var result = await service.LoadSummaryAsync(filePath);
 
-        Assert.Equal(expected, result);
+        Assert.Contains("Test content", result);
     }
 
     [Fact]
@@ -227,14 +265,70 @@ public class FileStorageServiceTests : IDisposable
     {
         var service = CreateService(_tempDir);
         var timestamp = new DateTime(2024, 1, 1, 9, 0, 0);
-        var expected = "# Samenvatting\n\nActiepunten: **verplicht** — émoji 🎙";
 
-        await service.SaveSummaryAsync(expected, timestamp);
+        await service.SaveTranscriptionAsync("Samenvatting: **verplicht** — émoji 🎙", null, null, timestamp);
         var filePath = Path.Combine(_tempDir, "20240101 0900.md");
 
         var result = await service.LoadSummaryAsync(filePath);
 
-        Assert.Equal(expected, result);
+        Assert.Contains("Samenvatting: **verplicht** — émoji 🎙", result);
+    }
+
+    // ── LoadTranscriptionAsync / ParseSections ───────────────────────────
+
+    [Fact]
+    public async Task LoadTranscriptionAsync_ParsesAllSections()
+    {
+        var service = CreateService(_tempDir);
+        var timestamp = new DateTime(2024, 3, 15, 14, 30, 0);
+        await service.SaveTranscriptionAsync("My summary", "My transcript", "Speaker A: hello", timestamp);
+        var filePath = Path.Combine(_tempDir, "20240315 1430.md");
+
+        var result = await service.LoadTranscriptionAsync(filePath);
+
+        Assert.Equal("My summary", result.Summary);
+        Assert.Equal("My transcript", result.Transcript);
+        Assert.Equal("Speaker A: hello", result.DiarizedTranscript);
+    }
+
+    [Fact]
+    public void ParseSections_LegacyFile_TreatsEverythingAsSummary()
+    {
+        var legacy = "# Old Summary\n\nSome content without section headings.";
+
+        var result = FileStorageService.ParseSections(legacy);
+
+        Assert.Equal(legacy.Trim(), result.Summary);
+        Assert.Empty(result.Transcript);
+        Assert.Empty(result.DiarizedTranscript);
+    }
+
+    [Fact]
+    public void ParseSections_EmptySections_ReturnsEmptyStrings()
+    {
+        var content = "## Summary and action items\n\n\n\n## Transcript\n\n\n\n## Speaker attributed transcript\n\n";
+
+        var result = FileStorageService.ParseSections(content);
+
+        Assert.Empty(result.Summary);
+        Assert.Empty(result.Transcript);
+        Assert.Empty(result.DiarizedTranscript);
+    }
+
+    [Fact]
+    public void ParseSections_RoundTripsContent()
+    {
+        var summary = "- Action 1\n- Action 2";
+        var transcript = "Hello world this is a test.";
+        var diarized = "Speaker A: Hello\nSpeaker B: World";
+
+        var content = $"## Summary and action items\n\n{summary}\n\n## Transcript\n\n{transcript}\n\n## Speaker attributed transcript\n\n{diarized}\n";
+
+        var result = FileStorageService.ParseSections(content);
+
+        Assert.Equal(summary, result.Summary);
+        Assert.Equal(transcript, result.Transcript);
+        Assert.Equal(diarized, result.DiarizedTranscript);
     }
 
     // ── RenameSummaryAsync ────────────────────────────────────────────────
@@ -244,7 +338,7 @@ public class FileStorageServiceTests : IDisposable
     {
         var service = CreateService(_tempDir);
         var timestamp = new DateTime(2024, 3, 15, 14, 30, 0);
-        await service.SaveSummaryAsync("content", timestamp);
+        await service.SaveTranscriptionAsync("content", null, null, timestamp);
         var oldPath = Path.Combine(_tempDir, "20240315 1430.md");
 
         await service.RenameSummaryAsync(oldPath, "Daily standup");
@@ -258,14 +352,13 @@ public class FileStorageServiceTests : IDisposable
     {
         var service = CreateService(_tempDir);
         var timestamp = new DateTime(2024, 3, 15, 14, 30, 0);
-        var content = "## Summary\n\nOriginal content";
-        await service.SaveSummaryAsync(content, timestamp);
+        await service.SaveTranscriptionAsync("Original content", "transcript", "diarized", timestamp);
         var oldPath = Path.Combine(_tempDir, "20240315 1430.md");
 
         await service.RenameSummaryAsync(oldPath, "My meeting");
 
         var actual = await File.ReadAllTextAsync(Path.Combine(_tempDir, "My meeting.md"));
-        Assert.Equal(content, actual);
+        Assert.Contains("Original content", actual);
     }
 
     [Fact]
@@ -273,13 +366,13 @@ public class FileStorageServiceTests : IDisposable
     {
         var service = CreateService(_tempDir);
         var timestamp = new DateTime(2024, 3, 15, 14, 30, 0);
-        await service.SaveSummaryAsync("content", timestamp);
+        await service.SaveTranscriptionAsync("content", null, null, timestamp);
         var oldPath = Path.Combine(_tempDir, "20240315 1430.md");
 
         var result = await service.RenameSummaryAsync(oldPath, "Daily standup");
 
         Assert.Equal(Path.Combine(_tempDir, "Daily standup.md"), result.FilePath);
-        Assert.Equal("Daily standup", result.DisplayName); // Non-date name falls back to stem
+        Assert.Equal("Daily standup", result.DisplayName);
     }
 
     [Fact]
@@ -287,7 +380,7 @@ public class FileStorageServiceTests : IDisposable
     {
         var service = CreateService(_tempDir);
         var timestamp = new DateTime(2024, 3, 15, 14, 30, 0);
-        await service.SaveSummaryAsync("content", timestamp);
+        await service.SaveTranscriptionAsync("content", null, null, timestamp);
         var oldPath = Path.Combine(_tempDir, "20240315 1430.md");
 
         var result = await service.RenameSummaryAsync(oldPath, "  Daily standup  ");
@@ -300,7 +393,7 @@ public class FileStorageServiceTests : IDisposable
     {
         var service = CreateService(_tempDir);
         var timestamp = new DateTime(2024, 3, 15, 14, 30, 0);
-        await service.SaveSummaryAsync("content", timestamp);
+        await service.SaveTranscriptionAsync("content", null, null, timestamp);
         var oldPath = Path.Combine(_tempDir, "20240315 1430.md");
 
         await service.RenameSummaryAsync(oldPath, "Retrospective");
@@ -314,9 +407,8 @@ public class FileStorageServiceTests : IDisposable
     public async Task RenameSummaryAsync_ThrowsWhenTargetAlreadyExists()
     {
         var service = CreateService(_tempDir);
-        await service.SaveSummaryAsync("first", new DateTime(2024, 3, 15, 14, 30, 0));
-        await service.SaveSummaryAsync("second", new DateTime(2024, 3, 16, 10, 0, 0));
-        // Rename the second file to the same name as the first
+        await service.SaveTranscriptionAsync("first", null, null, new DateTime(2024, 3, 15, 14, 30, 0));
+        await service.SaveTranscriptionAsync("second", null, null, new DateTime(2024, 3, 16, 10, 0, 0));
         var secondPath = Path.Combine(_tempDir, "20240316 1000.md");
 
         await Assert.ThrowsAsync<IOException>(

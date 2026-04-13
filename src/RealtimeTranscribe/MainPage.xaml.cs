@@ -59,7 +59,7 @@ public partial class MainPage : ContentPage
     {
         if (sender is Entry entry && entry.BindingContext is TranscriptionFileItem item && item.IsEditing)
         {
-            _ = _viewModel.CommitRenameCommand.ExecuteAsync(item);
+            item.CancelEdit();
         }
     }
 

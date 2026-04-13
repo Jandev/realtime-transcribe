@@ -48,6 +48,11 @@ public partial class MainViewModel : ObservableObject
         // Restore persisted font size, clamping any out-of-range value to a safe default.
         _contentFontSize = TextScaleService.Restore(
             Preferences.Default.Get(TextScaleService.PreferenceKey, TextScaleService.Default));
+
+        // Eagerly load the sidebar file list so it appears immediately on startup.
+        // OnAppearing also calls RefreshFilesAsync, but on some platforms the initial
+        // tab's OnAppearing does not fire reliably in Shell-based navigation.
+        _ = RefreshFilesAsync();
     }
 
     [ObservableProperty]
@@ -297,10 +302,10 @@ public partial class MainViewModel : ObservableObject
         try
         {
             StatusMessage = $"Loading {file.DisplayName}…";
-            var content = await _fileStorageService.LoadSummaryAsync(file.FilePath);
-            Transcript = string.Empty;
-            DiarizedTranscript = string.Empty;
-            Summary = content;
+            var content = await _fileStorageService.LoadTranscriptionAsync(file.FilePath);
+            Summary = content.Summary;
+            Transcript = content.Transcript;
+            DiarizedTranscript = content.DiarizedTranscript;
             StatusMessage = $"Loaded: {file.DisplayName}";
         }
         catch (Exception ex)
@@ -559,9 +564,9 @@ public partial class MainViewModel : ObservableObject
                 },
                 _cts.Token);
 
-            if (!string.IsNullOrEmpty(Summary))
+            if (!string.IsNullOrEmpty(Summary) || !string.IsNullOrEmpty(Transcript) || !string.IsNullOrEmpty(DiarizedTranscript))
             {
-                await _fileStorageService.SaveSummaryAsync(Summary, DateTime.Now, _cts.Token);
+                await _fileStorageService.SaveTranscriptionAsync(Summary, Transcript, DiarizedTranscript, DateTime.Now, _cts.Token);
                 await RefreshFilesAsync();
             }
 
