@@ -164,8 +164,8 @@ public class TranscriptionService : ITranscriptionService
             try
             {
                 var projectClient = new AIProjectClient(endpoint, credential);
-                var connection = projectClient.GetConnection(typeof(AzureOpenAIClient).FullName!);
-                if (connection.TryGetLocatorAsUri(out Uri? uri) && uri is not null)
+                var connection = projectClient.Connections.GetDefaultConnection(ConnectionType.AzureOpenAI, false);
+                if (connection?.Target is string target && Uri.TryCreate(target, UriKind.Absolute, out Uri? uri))
                 {
                     return new AzureOpenAIClient(new Uri($"https://{uri.Host}"), credential);
                 }
