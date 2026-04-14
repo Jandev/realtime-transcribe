@@ -366,8 +366,11 @@ public partial class MainViewModel : ObservableObject
 
     /// <summary>
     /// Appends <paramref name="segment"/> to <see cref="Transcript"/> one character at a time
-    /// to produce a visually fluent "streaming" effect.  Must be called from a background thread;
-    /// all UI updates are dispatched to the main thread.  Respects <paramref name="ct"/> on every
+    /// to produce a visually fluent "streaming" effect.  The delay loop runs on the calling
+    /// (background) thread; each individual character update is dispatched to the main thread
+    /// via a sync lambda to avoid passing an async lambda through
+    /// <c>NSAsyncSynchronizationContextDispatcher</c>, which triggers the Mono
+    /// <c>interp_try_devirt</c> crash on MacCatalyst.  Respects <paramref name="ct"/> on every
     /// inter-character delay so cancellation stops the animation immediately.
     /// </summary>
     private async Task AppendToTranscriptAsync(string segment, CancellationToken ct)
@@ -375,30 +378,28 @@ public partial class MainViewModel : ObservableObject
         if (string.IsNullOrEmpty(segment))
             return;
 
-        await MainThread.InvokeOnMainThreadAsync(async () =>
+        var prefix = string.IsNullOrEmpty(Transcript) ? string.Empty : " ";
+        var textToAppend = prefix + segment;
+        var sb = new StringBuilder(Transcript);
+
+        foreach (char c in textToAppend)
         {
-            var prefix = string.IsNullOrEmpty(Transcript) ? string.Empty : " ";
-            var textToAppend = prefix + segment;
-            var sb = new StringBuilder(Transcript);
+            if (ct.IsCancellationRequested)
+                return;
 
-            foreach (char c in textToAppend)
+            sb.Append(c);
+            var snapshot = sb.ToString();
+            MainThread.BeginInvokeOnMainThread(() => Transcript = snapshot);
+
+            try
             {
-                if (ct.IsCancellationRequested)
-                    return;
-
-                sb.Append(c);
-                Transcript = sb.ToString();
-
-                try
-                {
-                    await Task.Delay(TranscriptAnimationDelayMs, ct);
-                }
-                catch (OperationCanceledException)
-                {
-                    return;
-                }
+                await Task.Delay(TranscriptAnimationDelayMs, ct);
             }
-        });
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+        }
     }
 
     /// <summary>
@@ -411,19 +412,24 @@ public partial class MainViewModel : ObservableObject
         if (!IsRecording)
             return;
 
-        MainThread.BeginInvokeOnMainThread(async () =>
+        MainThread.BeginInvokeOnMainThread(HandleRecordingInterruptedOnMainThread);
+    }
+
+    // Named async void so Mono does not create a doubly-nested anonymous async-lambda
+    // state machine (MainViewModel+<>c__DisplayClass+<b__N>d), which triggers the
+    // interp_try_devirt EXC_BAD_ACCESS crash on MacCatalyst.
+    private async void HandleRecordingInterruptedOnMainThread()
+    {
+        try
         {
-            try
-            {
-                StatusMessage = "⚠️ Audio device disconnected — saving recording…";
-                await StopAndProcessAsync();
-            }
-            catch (Exception ex)
-            {
-                StatusMessage = $"Error handling device disconnection: {ex.Message}";
-                IsProcessing = false;
-            }
-        });
+            StatusMessage = "⚠️ Audio device disconnected — saving recording…";
+            await StopAndProcessAsync();
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error handling device disconnection: {ex.Message}";
+            IsProcessing = false;
+        }
     }
 
     /// <summary>
@@ -437,19 +443,22 @@ public partial class MainViewModel : ObservableObject
         if (!IsRecording)
             return;
 
-        MainThread.BeginInvokeOnMainThread(async () =>
+        MainThread.BeginInvokeOnMainThread(HandleDeviceSelectionChangedOnMainThread);
+    }
+
+    // Named async void — see HandleRecordingInterruptedOnMainThread for the rationale.
+    private async void HandleDeviceSelectionChangedOnMainThread()
+    {
+        try
         {
-            try
-            {
-                StatusMessage = "🔄 Device changed — restarting recording…";
-                await StopAndRestartRecordingAsync();
-            }
-            catch (Exception ex)
-            {
-                StatusMessage = $"Error restarting recording: {ex.Message}";
-                IsRecording = false;
-            }
-        });
+            StatusMessage = "🔄 Device changed — restarting recording…";
+            await StopAndRestartRecordingAsync();
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error restarting recording: {ex.Message}";
+            IsRecording = false;
+        }
     }
 
     /// <summary>
@@ -556,9 +565,10 @@ public partial class MainViewModel : ObservableObject
             StatusMessage = "Summarising…";
             await _transcriptionService.SummarizeStreamingAsync(
                 Transcript,
-                onToken: async token =>
+                onToken: token =>
                 {
-                    await MainThread.InvokeOnMainThreadAsync(() => Summary += token);
+                    MainThread.BeginInvokeOnMainThread(() => Summary += token);
+                    return Task.CompletedTask;
                 },
                 _cts.Token);
 
