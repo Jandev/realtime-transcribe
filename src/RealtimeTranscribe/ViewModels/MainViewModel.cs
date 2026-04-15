@@ -19,12 +19,24 @@ public partial class MainViewModel : ObservableObject
     private readonly IMarkdownProcessor _markdownProcessor;
     private readonly IFileStorageService _fileStorageService;
 
-    private CancellationTokenSource? _cts;
     private CancellationTokenSource? _schedulerCts;
     private Task? _schedulerTask;
 
+    // Background processing for diarisation, summarisation, and final file save.
+    private CancellationTokenSource? _backgroundCts;
+
     // Accumulates transcript segments produced by the scheduler and the final chunk.
     private readonly List<string> _transcriptSegments = new();
+
+    // The "Current transcription…" sidebar item shown during a live recording.
+    private TranscriptionFileItem? _liveSessionItem;
+
+    // True when the user is viewing the live recording (vs. a saved file).
+    private bool _isViewingLiveSession;
+
+    // File path of the transcription currently being processed in the background.
+    // Used to route live streaming updates to the UI when the user is viewing that item.
+    private string? _processingFilePath;
 
     public MainViewModel(
         IAudioService audioService,
@@ -52,6 +64,7 @@ public partial class MainViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(RecordButtonText))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleRecordingCommand))]
     [NotifyCanExecuteChangedFor(nameof(CopyTranscriptCommand))]
     [NotifyCanExecuteChangedFor(nameof(CopyDiarizedTranscriptCommand))]
     [NotifyCanExecuteChangedFor(nameof(CopySummaryCommand))]
@@ -59,10 +72,6 @@ public partial class MainViewModel : ObservableObject
     private bool _isRecording;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(RecordButtonText))]
-    [NotifyCanExecuteChangedFor(nameof(CopyTranscriptCommand))]
-    [NotifyCanExecuteChangedFor(nameof(CopyDiarizedTranscriptCommand))]
-    [NotifyCanExecuteChangedFor(nameof(CopySummaryCommand))]
     [NotifyCanExecuteChangedFor(nameof(CancelCommand))]
     private bool _isProcessing;
 
@@ -136,9 +145,9 @@ public partial class MainViewModel : ObservableObject
     /// <summary>Font size used for section-heading labels (2 units larger than content).</summary>
     public double HeadingFontSize => _contentFontSize + 2.0;
 
-    public string RecordButtonText => IsRecording ? "⏹  Stop Recording" : IsProcessing ? "⏳  Processing…" : "🎙  Start Recording";
+    public string RecordButtonText => IsRecording ? "⏹  Stop Recording" : "🎙  Start Recording";
 
-    public bool CanRecord => !IsProcessing;
+    public bool CanRecord => !IsRecording;
 
     private bool CanCancel => IsProcessing;
 
@@ -158,7 +167,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanCancel))]
     private void Cancel()
     {
-        _cts?.Cancel();
+        _backgroundCts?.Cancel();
         StatusMessage = "Cancelling…";
     }
 
@@ -197,9 +206,9 @@ public partial class MainViewModel : ObservableObject
         Preferences.Default.Set(TextScaleService.PreferenceKey, ContentFontSize);
     }
 
-    private bool HasTranscript => !string.IsNullOrEmpty(Transcript) && !IsRecording && !IsProcessing;
-    private bool HasDiarizedTranscript => !string.IsNullOrEmpty(DiarizedTranscript) && !IsRecording && !IsProcessing;
-    private bool HasSummary => !string.IsNullOrEmpty(Summary) && !IsRecording && !IsProcessing;
+    private bool HasTranscript => !string.IsNullOrEmpty(Transcript) && !IsRecording;
+    private bool HasDiarizedTranscript => !string.IsNullOrEmpty(DiarizedTranscript) && !IsRecording;
+    private bool HasSummary => !string.IsNullOrEmpty(Summary) && !IsRecording;
 
     // ── Sidebar: saved transcription files ──────────────────────────────
 
@@ -219,8 +228,23 @@ public partial class MainViewModel : ObservableObject
 
     partial void OnSelectedTranscriptionFileChanged(TranscriptionFileItem? value)
     {
-        if (value is not null)
+        if (value is null)
+            return;
+
+        if (value.IsLiveRecording)
+        {
+            // Navigate back to the live recording view.
+            Transcript = string.Join(" ", _transcriptSegments);
+            DiarizedTranscript = string.Empty;
+            Summary = string.Empty;
+            _isViewingLiveSession = true;
+            StatusMessage = "🔴 Recording…";
+        }
+        else
+        {
+            _isViewingLiveSession = false;
             _ = LoadTranscriptionFileAsync(value);
+        }
     }
 
     [RelayCommand]
@@ -240,12 +264,23 @@ public partial class MainViewModel : ObservableObject
     /// <summary>Applies <see cref="FilterText"/> and groups the cached file list by date.</summary>
     private void RebuildGroupedFiles()
     {
-        var items = _allFiles.Select(f => new TranscriptionFileItem(f));
+        // Remember the current selection so it can be restored after the rebuild.
+        var selectedPath = _isViewingLiveSession ? null : SelectedTranscriptionFile?.FilePath;
+        var wasViewingLive = _isViewingLiveSession;
+
+        var fileItems = _allFiles.Select(f => new TranscriptionFileItem(f)).ToList();
+
+        // Prepend the live recording item so it appears first in its date group.
+        if (_liveSessionItem is not null)
+            fileItems.Insert(0, _liveSessionItem);
+
+        IEnumerable<TranscriptionFileItem> items = fileItems;
 
         if (!string.IsNullOrWhiteSpace(FilterText))
         {
             items = items.Where(item =>
-                item.FileNameStem.Contains(FilterText, StringComparison.OrdinalIgnoreCase)
+                item.IsLiveRecording
+                || item.FileNameStem.Contains(FilterText, StringComparison.OrdinalIgnoreCase)
                 || item.DisplayName.Contains(FilterText, StringComparison.OrdinalIgnoreCase));
         }
 
@@ -257,6 +292,18 @@ public partial class MainViewModel : ObservableObject
         GroupedTranscriptionFiles.Clear();
         foreach (var g in groups)
             GroupedTranscriptionFiles.Add(g);
+
+        // Restore the previous selection without re-triggering file loads.
+        if (wasViewingLive && _liveSessionItem is not null)
+        {
+            SelectedTranscriptionFile = _liveSessionItem;
+        }
+        else if (selectedPath is not null)
+        {
+            SelectedTranscriptionFile = GroupedTranscriptionFiles
+                .SelectMany(g => g)
+                .FirstOrDefault(item => item.FilePath == selectedPath);
+        }
     }
 
     /// <summary>
@@ -328,6 +375,11 @@ public partial class MainViewModel : ObservableObject
             DiarizedTranscript = string.Empty;
             Summary = string.Empty;
 
+            // Create the "Current transcription…" sidebar item.
+            _liveSessionItem = new TranscriptionFileItem("🔴 Current transcription…");
+            _isViewingLiveSession = true;
+            RebuildGroupedFiles();
+
             await _audioService.StartRecordingAsync();
             IsRecording = true;
             StatusMessage = "🔴 Recording…";
@@ -356,10 +408,13 @@ public partial class MainViewModel : ObservableObject
             {
                 _transcriptSegments.Add(segment);
 
-                await AppendToTranscriptAsync(segment, cancellationToken);
+                if (_isViewingLiveSession)
+                {
+                    await AppendToTranscriptAsync(segment, cancellationToken);
 
-                await MainThread.InvokeOnMainThreadAsync(() =>
-                    StatusMessage = $"🔴 Recording… (updated {DateTime.Now:HH:mm:ss})");
+                    MainThread.BeginInvokeOnMainThread(() =>
+                        StatusMessage = $"🔴 Recording… (updated {DateTime.Now:HH:mm:ss})");
+                }
             },
             cancellationToken: cancellationToken);
     }
@@ -524,10 +579,7 @@ public partial class MainViewModel : ObservableObject
         _schedulerCts?.Cancel();
 
         IsRecording = false;
-        IsProcessing = true;
         StatusMessage = "Stopping recording…";
-
-        _cts = new CancellationTokenSource();
 
         try
         {
@@ -544,6 +596,9 @@ public partial class MainViewModel : ObservableObject
 
             if (wav.Length == 0 && _transcriptSegments.Count == 0)
             {
+                _liveSessionItem = null;
+                _isViewingLiveSession = false;
+                RebuildGroupedFiles();
                 StatusMessage = "No audio captured.";
                 return;
             }
@@ -552,49 +607,148 @@ public partial class MainViewModel : ObservableObject
             if (wav.Length > 0)
             {
                 StatusMessage = "Transcribing final segment…";
-                var finalSegment = await _transcriptionService.TranscribeAsync(wav, _cts.Token);
+                using var finalCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                var finalSegment = await _transcriptionService.TranscribeAsync(wav, finalCts.Token);
                 if (!string.IsNullOrEmpty(finalSegment))
                     _transcriptSegments.Add(finalSegment);
             }
 
-            Transcript = string.Join(" ", _transcriptSegments);
+            // Build the final transcript and create the file immediately so the
+            // sidebar shows a proper filename rather than "Current transcription…".
+            var transcript = string.Join(" ", _transcriptSegments);
+            Transcript = transcript;
 
-            StatusMessage = "Identifying speakers…";
-            DiarizedTranscript = await _transcriptionService.DiarizeAsync(Transcript, _cts.Token);
+            var timestamp = DateTime.Now;
 
-            StatusMessage = "Summarising…";
-            await _transcriptionService.SummarizeStreamingAsync(
-                Transcript,
-                onToken: token =>
-                {
-                    MainThread.BeginInvokeOnMainThread(() => Summary += token);
-                    return Task.CompletedTask;
-                },
-                _cts.Token);
+            // Save a partial file (transcript only) so the sidebar entry has a real file.
+            await _fileStorageService.SaveTranscriptionAsync(null, transcript, null, timestamp);
 
-            if (!string.IsNullOrEmpty(Summary) || !string.IsNullOrEmpty(Transcript) || !string.IsNullOrEmpty(DiarizedTranscript))
-            {
-                await _fileStorageService.SaveTranscriptionAsync(Summary, Transcript, DiarizedTranscript, DateTime.Now, _cts.Token);
-                await RefreshFilesAsync();
-            }
+            // Remove the live placeholder and refresh the sidebar from disk.
+            _liveSessionItem = null;
+            _isViewingLiveSession = false;
+            await RefreshFilesAsync();
 
-            StatusMessage = "Done ✓";
+            // Select the newly-created file in the sidebar.
+            var fileName = timestamp.ToString("yyyyMMdd HHmm") + ".md";
+            var filePath = Path.Combine(_fileStorageService.OutputFolder ?? string.Empty, fileName);
+            _processingFilePath = filePath;
+
+            SelectedTranscriptionFile = GroupedTranscriptionFiles
+                .SelectMany(g => g)
+                .FirstOrDefault(item => item.FilePath == filePath);
+
+            // Launch background processing (diarisation, summarisation, final save).
+            _backgroundCts?.Cancel();
+            _backgroundCts?.Dispose();
+            _backgroundCts = new CancellationTokenSource();
+            _ = RunBackgroundProcessingAsync(transcript, timestamp, _backgroundCts.Token);
+
+            StatusMessage = "Processing in background…";
         }
         catch (OperationCanceledException)
         {
+            _liveSessionItem = null;
+            _isViewingLiveSession = false;
+            RebuildGroupedFiles();
             StatusMessage = "Cancelled.";
         }
         catch (Exception ex)
         {
+            _liveSessionItem = null;
+            _isViewingLiveSession = false;
+            RebuildGroupedFiles();
             StatusMessage = $"Error: {ex.Message}";
         }
         finally
         {
-            IsProcessing = false;
             _schedulerCts?.Dispose();
             _schedulerCts = null;
-            _cts?.Dispose();
-            _cts = null;
+        }
+    }
+
+    /// <summary>
+    /// Runs speaker diarisation, streaming summarisation, and the final file save in the
+    /// background so the user can start a new recording immediately.
+    /// </summary>
+    private async Task RunBackgroundProcessingAsync(string transcript, DateTime timestamp, CancellationToken ct)
+    {
+        IsProcessing = true;
+
+        try
+        {
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                if (!IsRecording)
+                    StatusMessage = "Identifying speakers…";
+            });
+
+            var diarized = await _transcriptionService.DiarizeAsync(transcript, ct);
+
+            // Save intermediate progress (transcript + diarised) so navigating to the
+            // file in the sidebar always reflects the latest available results.
+            await _fileStorageService.SaveTranscriptionAsync(null, transcript, diarized, timestamp, ct);
+
+            // Update UI if the user is currently viewing the processing item.
+            var processingPath = _processingFilePath;
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                if (!IsRecording && SelectedTranscriptionFile?.FilePath == processingPath)
+                    DiarizedTranscript = diarized;
+
+                if (!IsRecording)
+                    StatusMessage = "Summarising…";
+            });
+
+            var summaryBuilder = new StringBuilder();
+            await _transcriptionService.SummarizeStreamingAsync(
+                transcript,
+                onToken: token =>
+                {
+                    summaryBuilder.Append(token);
+                    MainThread.BeginInvokeOnMainThread(() =>
+                    {
+                        if (!IsRecording && SelectedTranscriptionFile?.FilePath == processingPath)
+                            Summary += token;
+                    });
+                    return Task.CompletedTask;
+                },
+                ct);
+
+            var summary = summaryBuilder.ToString();
+
+            // Save the full file (overwriting the intermediate version).
+            await _fileStorageService.SaveTranscriptionAsync(summary, transcript, diarized, timestamp, ct);
+
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                _ = RefreshFilesAsync();
+                if (!IsRecording)
+                    StatusMessage = "Done ✓";
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                if (!IsRecording)
+                    StatusMessage = "Background processing cancelled.";
+            });
+        }
+        catch (Exception ex)
+        {
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                if (!IsRecording)
+                    StatusMessage = $"Background processing error: {ex.Message}";
+            });
+        }
+        finally
+        {
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                IsProcessing = false;
+                _processingFilePath = null;
+            });
         }
     }
 }

@@ -18,6 +18,17 @@ public partial class TranscriptionFileItem : ObservableObject
         DateKey = file.LastModified.ToString("yyyyMMdd");
     }
 
+    /// <summary>Creates a "Current transcription…" placeholder for the live recording.</summary>
+    public TranscriptionFileItem(string displayName)
+    {
+        DisplayName = displayName;
+        FilePath = string.Empty;
+        LastModified = DateTime.Now;
+        FileNameStem = displayName;
+        DateKey = DateTime.Now.ToString("yyyyMMdd");
+        IsLiveRecording = true;
+    }
+
     [ObservableProperty]
     private string _displayName;
 
@@ -32,6 +43,10 @@ public partial class TranscriptionFileItem : ObservableObject
 
     /// <summary>Date key used for grouping (yyyyMMdd).</summary>
     public string DateKey { get; private set; }
+
+    /// <summary>Whether this item represents a live recording in progress.</summary>
+    [ObservableProperty]
+    private bool _isLiveRecording;
 
     /// <summary>Whether the user is currently renaming this item inline.</summary>
     [ObservableProperty]
