@@ -22,8 +22,9 @@ public partial class MainViewModel : ObservableObject
     private CancellationTokenSource? _schedulerCts;
     private Task? _schedulerTask;
 
-    // Background processing for diarisation, summarisation, and final file save.
-    private CancellationTokenSource? _backgroundCts;
+    // Background processing tasks for diarisation, summarisation, and final file save.
+    // Multiple tasks can run concurrently (one per completed recording).
+    private readonly List<CancellationTokenSource> _backgroundCtsList = new();
 
     // Accumulates transcript segments produced by the scheduler and the final chunk.
     private readonly List<string> _transcriptSegments = new();
@@ -33,10 +34,6 @@ public partial class MainViewModel : ObservableObject
 
     // True when the user is viewing the live recording (vs. a saved file).
     private bool _isViewingLiveSession;
-
-    // File path of the transcription currently being processed in the background.
-    // Used to route live streaming updates to the UI when the user is viewing that item.
-    private string? _processingFilePath;
 
     public MainViewModel(
         IAudioService audioService,
@@ -164,7 +161,8 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanCancel))]
     private void Cancel()
     {
-        _backgroundCts?.Cancel();
+        foreach (var cts in _backgroundCtsList)
+            cts.Cancel();
         StatusMessage = "Cancelling…";
     }
 
@@ -627,20 +625,18 @@ public partial class MainViewModel : ObservableObject
             await RefreshFilesAsync();
 
             // Select the newly-created file in the sidebar.
-            var fileName = timestamp.ToString("yyyyMMdd HHmm") + ".md";
+            var fileName = timestamp.ToString("yyyyMMdd HHmmss") + ".md";
             var filePath = Path.Combine(_fileStorageService.OutputFolder ?? string.Empty, fileName);
-            _processingFilePath = filePath;
 
             SelectedTranscriptionFile = GroupedTranscriptionFiles
                 .SelectMany(g => g)
                 .FirstOrDefault(item => item.FilePath == filePath);
 
             // Launch background processing (diarisation, summarisation, final save).
-            // Cancel any previous background task but do not dispose its CTS immediately —
-            // the running task may still reference the token in cancellation callbacks.
-            _backgroundCts?.Cancel();
-            _backgroundCts = new CancellationTokenSource();
-            _ = RunBackgroundProcessingAsync(transcript, timestamp, _backgroundCts.Token);
+            // Each recording gets its own CTS so previous background tasks continue running.
+            var bgCts = new CancellationTokenSource();
+            _backgroundCtsList.Add(bgCts);
+            _ = RunBackgroundProcessingAsync(transcript, timestamp, filePath, bgCts);
 
             StatusMessage = "Processing in background…";
         }
@@ -668,9 +664,12 @@ public partial class MainViewModel : ObservableObject
     /// <summary>
     /// Runs speaker diarisation, streaming summarisation, and the final file save in the
     /// background so the user can start a new recording immediately.
+    /// Each recording gets its own <paramref name="cts"/> so multiple background tasks can
+    /// run concurrently without cancelling each other.
     /// </summary>
-    private async Task RunBackgroundProcessingAsync(string transcript, DateTime timestamp, CancellationToken ct)
+    private async Task RunBackgroundProcessingAsync(string transcript, DateTime timestamp, string processingFilePath, CancellationTokenSource cts)
     {
+        var ct = cts.Token;
         IsProcessing = true;
 
         try
@@ -689,10 +688,9 @@ public partial class MainViewModel : ObservableObject
                 summary: null, transcript: transcript, diarizedTranscript: diarized, timestamp: timestamp, cancellationToken: ct);
 
             // Update UI if the user is currently viewing the processing item.
-            var processingPath = _processingFilePath;
             MainThread.BeginInvokeOnMainThread(() =>
             {
-                if (!IsRecording && SelectedTranscriptionFile?.FilePath == processingPath)
+                if (!IsRecording && SelectedTranscriptionFile?.FilePath == processingFilePath)
                     DiarizedTranscript = diarized;
 
                 if (!IsRecording)
@@ -707,7 +705,7 @@ public partial class MainViewModel : ObservableObject
                     summaryBuilder.Append(token);
                     MainThread.BeginInvokeOnMainThread(() =>
                     {
-                        if (!IsRecording && SelectedTranscriptionFile?.FilePath == processingPath)
+                        if (!IsRecording && SelectedTranscriptionFile?.FilePath == processingFilePath)
                             Summary += token;
                     });
                     return Task.CompletedTask;
@@ -746,8 +744,9 @@ public partial class MainViewModel : ObservableObject
         {
             MainThread.BeginInvokeOnMainThread(() =>
             {
-                IsProcessing = false;
-                _processingFilePath = null;
+                _backgroundCtsList.Remove(cts);
+                cts.Dispose();
+                IsProcessing = _backgroundCtsList.Count > 0;
             });
         }
     }

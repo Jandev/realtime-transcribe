@@ -44,7 +44,7 @@ public partial class FileStorageService : IFileStorageService
         if (!string.IsNullOrEmpty(diarizedTranscript))
             sb.AppendLine(diarizedTranscript);
 
-        var fileName = timestamp.ToString("yyyyMMdd HHmm") + ".md";
+        var fileName = timestamp.ToString("yyyyMMdd HHmmss") + ".md";
         var filePath = Path.Combine(OutputFolder, fileName);
 
         await File.WriteAllTextAsync(filePath, sb.ToString(), Encoding.UTF8, cancellationToken);
@@ -170,9 +170,18 @@ public partial class FileStorageService : IFileStorageService
     private static string FormatDisplayName(string fileName, DateTime fallback)
     {
         var stem = Path.GetFileNameWithoutExtension(fileName);
-        if (DateTime.TryParseExact(stem, "yyyyMMdd HHmm",
+
+        // Try new format with seconds first, then legacy format without seconds.
+        if (DateTime.TryParseExact(stem, "yyyyMMdd HHmmss",
                 System.Globalization.CultureInfo.InvariantCulture,
                 System.Globalization.DateTimeStyles.None, out var dt))
+        {
+            return dt.ToString("MMM d, yyyy HH:mm:ss");
+        }
+
+        if (DateTime.TryParseExact(stem, "yyyyMMdd HHmm",
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out dt))
         {
             return dt.ToString("MMM d, yyyy HH:mm");
         }
