@@ -68,7 +68,7 @@ public class FileStorageServiceTests : IDisposable
 
         var files = Directory.GetFiles(_tempDir, "*.md");
         Assert.Single(files);
-        Assert.Equal("20240315 1430.md", Path.GetFileName(files[0]));
+        Assert.Equal("20240315 143000.md", Path.GetFileName(files[0]));
     }
 
     [Fact]
@@ -79,7 +79,7 @@ public class FileStorageServiceTests : IDisposable
 
         await service.SaveTranscriptionAsync("My summary", "My transcript", "Speaker A: hello", timestamp);
 
-        var filePath = Path.Combine(_tempDir, "20240315 1430.md");
+        var filePath = Path.Combine(_tempDir, "20240315 143000.md");
         var content = await File.ReadAllTextAsync(filePath);
 
         Assert.Contains("## Summary and action items", content);
@@ -98,7 +98,7 @@ public class FileStorageServiceTests : IDisposable
 
         await service.SaveTranscriptionAsync("My summary", "My transcript", "Diarized text", timestamp);
 
-        var filePath = Path.Combine(_tempDir, "20240315 1430.md");
+        var filePath = Path.Combine(_tempDir, "20240315 143000.md");
         var content = await File.ReadAllTextAsync(filePath);
 
         var summaryIdx = content.IndexOf("## Summary and action items");
@@ -117,7 +117,7 @@ public class FileStorageServiceTests : IDisposable
 
         await service.SaveTranscriptionAsync("Samenvatting: **verplicht**", "émoji 🎙", null, timestamp);
 
-        var filePath = Path.Combine(_tempDir, "20240101 0900.md");
+        var filePath = Path.Combine(_tempDir, "20240101 090000.md");
         var content = await File.ReadAllTextAsync(filePath, System.Text.Encoding.UTF8);
         Assert.Contains("Samenvatting: **verplicht**", content);
         Assert.Contains("émoji 🎙", content);
@@ -132,7 +132,7 @@ public class FileStorageServiceTests : IDisposable
         await service.SaveTranscriptionAsync("First version", null, null, timestamp);
         await service.SaveTranscriptionAsync("Second version", null, null, timestamp);
 
-        var filePath = Path.Combine(_tempDir, "20240610 1100.md");
+        var filePath = Path.Combine(_tempDir, "20240610 110000.md");
         var content = await File.ReadAllTextAsync(filePath);
         Assert.Contains("Second version", content);
         Assert.DoesNotContain("First version", content);
@@ -146,7 +146,7 @@ public class FileStorageServiceTests : IDisposable
 
         await service.SaveTranscriptionAsync("Just a summary", null, null, timestamp);
 
-        var filePath = Path.Combine(_tempDir, "20240315 1430.md");
+        var filePath = Path.Combine(_tempDir, "20240315 143000.md");
         var content = await File.ReadAllTextAsync(filePath);
 
         Assert.Contains("## Summary and action items", content);
@@ -227,7 +227,7 @@ public class FileStorageServiceTests : IDisposable
         var result = await service.ListSummariesAsync();
 
         Assert.Single(result);
-        Assert.Equal("Mar 15, 2024 14:30", result[0].DisplayName);
+        Assert.Equal("Mar 15, 2024 14:30:00", result[0].DisplayName);
     }
 
     [Fact]
@@ -241,7 +241,7 @@ public class FileStorageServiceTests : IDisposable
         var result = await service.ListSummariesAsync();
 
         Assert.Single(result);
-        Assert.Equal(Path.Combine(_tempDir, "20240315 1430.md"), result[0].FilePath);
+        Assert.Equal(Path.Combine(_tempDir, "20240315 143000.md"), result[0].FilePath);
     }
 
     // ── LoadSummaryAsync ─────────────────────────────────────────────────
@@ -253,7 +253,7 @@ public class FileStorageServiceTests : IDisposable
         var timestamp = new DateTime(2024, 6, 10, 11, 0, 0);
 
         await service.SaveTranscriptionAsync("Test content", null, null, timestamp);
-        var filePath = Path.Combine(_tempDir, "20240610 1100.md");
+        var filePath = Path.Combine(_tempDir, "20240610 110000.md");
 
         var result = await service.LoadSummaryAsync(filePath);
 
@@ -267,7 +267,7 @@ public class FileStorageServiceTests : IDisposable
         var timestamp = new DateTime(2024, 1, 1, 9, 0, 0);
 
         await service.SaveTranscriptionAsync("Samenvatting: **verplicht** — émoji 🎙", null, null, timestamp);
-        var filePath = Path.Combine(_tempDir, "20240101 0900.md");
+        var filePath = Path.Combine(_tempDir, "20240101 090000.md");
 
         var result = await service.LoadSummaryAsync(filePath);
 
@@ -282,7 +282,7 @@ public class FileStorageServiceTests : IDisposable
         var service = CreateService(_tempDir);
         var timestamp = new DateTime(2024, 3, 15, 14, 30, 0);
         await service.SaveTranscriptionAsync("My summary", "My transcript", "Speaker A: hello", timestamp);
-        var filePath = Path.Combine(_tempDir, "20240315 1430.md");
+        var filePath = Path.Combine(_tempDir, "20240315 143000.md");
 
         var result = await service.LoadTranscriptionAsync(filePath);
 
@@ -341,7 +341,7 @@ public class FileStorageServiceTests : IDisposable
         await service.SaveTranscriptionAsync(summary, "transcript", "diarized", timestamp);
 
         // Verify the file contains bumped headings (### instead of ##)
-        var filePath = Path.Combine(_tempDir, "20240315 1430.md");
+        var filePath = Path.Combine(_tempDir, "20240315 143000.md");
         var rawContent = await File.ReadAllTextAsync(filePath);
         Assert.Contains("### Summary", rawContent);
         Assert.Contains("### Action Items", rawContent);
@@ -382,7 +382,7 @@ public class FileStorageServiceTests : IDisposable
         var service = CreateService(_tempDir);
         var timestamp = new DateTime(2024, 3, 15, 14, 30, 0);
         await service.SaveTranscriptionAsync("content", null, null, timestamp);
-        var oldPath = Path.Combine(_tempDir, "20240315 1430.md");
+        var oldPath = Path.Combine(_tempDir, "20240315 143000.md");
 
         await service.RenameSummaryAsync(oldPath, "Daily standup");
 
@@ -396,7 +396,7 @@ public class FileStorageServiceTests : IDisposable
         var service = CreateService(_tempDir);
         var timestamp = new DateTime(2024, 3, 15, 14, 30, 0);
         await service.SaveTranscriptionAsync("Original content", "transcript", "diarized", timestamp);
-        var oldPath = Path.Combine(_tempDir, "20240315 1430.md");
+        var oldPath = Path.Combine(_tempDir, "20240315 143000.md");
 
         await service.RenameSummaryAsync(oldPath, "My meeting");
 
@@ -410,7 +410,7 @@ public class FileStorageServiceTests : IDisposable
         var service = CreateService(_tempDir);
         var timestamp = new DateTime(2024, 3, 15, 14, 30, 0);
         await service.SaveTranscriptionAsync("content", null, null, timestamp);
-        var oldPath = Path.Combine(_tempDir, "20240315 1430.md");
+        var oldPath = Path.Combine(_tempDir, "20240315 143000.md");
 
         var result = await service.RenameSummaryAsync(oldPath, "Daily standup");
 
@@ -424,7 +424,7 @@ public class FileStorageServiceTests : IDisposable
         var service = CreateService(_tempDir);
         var timestamp = new DateTime(2024, 3, 15, 14, 30, 0);
         await service.SaveTranscriptionAsync("content", null, null, timestamp);
-        var oldPath = Path.Combine(_tempDir, "20240315 1430.md");
+        var oldPath = Path.Combine(_tempDir, "20240315 143000.md");
 
         var result = await service.RenameSummaryAsync(oldPath, "  Daily standup  ");
 
@@ -437,7 +437,7 @@ public class FileStorageServiceTests : IDisposable
         var service = CreateService(_tempDir);
         var timestamp = new DateTime(2024, 3, 15, 14, 30, 0);
         await service.SaveTranscriptionAsync("content", null, null, timestamp);
-        var oldPath = Path.Combine(_tempDir, "20240315 1430.md");
+        var oldPath = Path.Combine(_tempDir, "20240315 143000.md");
 
         await service.RenameSummaryAsync(oldPath, "Retrospective");
         var files = await service.ListSummariesAsync();
@@ -452,9 +452,9 @@ public class FileStorageServiceTests : IDisposable
         var service = CreateService(_tempDir);
         await service.SaveTranscriptionAsync("first", null, null, new DateTime(2024, 3, 15, 14, 30, 0));
         await service.SaveTranscriptionAsync("second", null, null, new DateTime(2024, 3, 16, 10, 0, 0));
-        var secondPath = Path.Combine(_tempDir, "20240316 1000.md");
+        var secondPath = Path.Combine(_tempDir, "20240316 100000.md");
 
         await Assert.ThrowsAsync<IOException>(
-            () => service.RenameSummaryAsync(secondPath, "20240315 1430"));
+            () => service.RenameSummaryAsync(secondPath, "20240315 143000"));
     }
 }
