@@ -64,7 +64,6 @@ public partial class MainViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(RecordButtonText))]
-    [NotifyCanExecuteChangedFor(nameof(ToggleRecordingCommand))]
     [NotifyCanExecuteChangedFor(nameof(CopyTranscriptCommand))]
     [NotifyCanExecuteChangedFor(nameof(CopyDiarizedTranscriptCommand))]
     [NotifyCanExecuteChangedFor(nameof(CopySummaryCommand))]
@@ -147,11 +146,9 @@ public partial class MainViewModel : ObservableObject
 
     public string RecordButtonText => IsRecording ? "⏹  Stop Recording" : "🎙  Start Recording";
 
-    public bool CanRecord => !IsRecording;
-
     private bool CanCancel => IsProcessing;
 
-    [RelayCommand(CanExecute = nameof(CanRecord))]
+    [RelayCommand]
     private async Task ToggleRecordingAsync()
     {
         if (IsRecording)
