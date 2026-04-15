@@ -621,7 +621,8 @@ public partial class MainViewModel : ObservableObject
             var timestamp = DateTime.Now;
 
             // Save a partial file (transcript only) so the sidebar entry has a real file.
-            await _fileStorageService.SaveTranscriptionAsync(null, transcript, null, timestamp);
+            await _fileStorageService.SaveTranscriptionAsync(
+                summary: null, transcript: transcript, diarizedTranscript: null, timestamp: timestamp);
 
             // Remove the live placeholder and refresh the sidebar from disk.
             _liveSessionItem = null;
@@ -638,8 +639,9 @@ public partial class MainViewModel : ObservableObject
                 .FirstOrDefault(item => item.FilePath == filePath);
 
             // Launch background processing (diarisation, summarisation, final save).
+            // Cancel any previous background task but do not dispose its CTS immediately —
+            // the running task may still reference the token in cancellation callbacks.
             _backgroundCts?.Cancel();
-            _backgroundCts?.Dispose();
             _backgroundCts = new CancellationTokenSource();
             _ = RunBackgroundProcessingAsync(transcript, timestamp, _backgroundCts.Token);
 
@@ -686,7 +688,8 @@ public partial class MainViewModel : ObservableObject
 
             // Save intermediate progress (transcript + diarised) so navigating to the
             // file in the sidebar always reflects the latest available results.
-            await _fileStorageService.SaveTranscriptionAsync(null, transcript, diarized, timestamp, ct);
+            await _fileStorageService.SaveTranscriptionAsync(
+                summary: null, transcript: transcript, diarizedTranscript: diarized, timestamp: timestamp, cancellationToken: ct);
 
             // Update UI if the user is currently viewing the processing item.
             var processingPath = _processingFilePath;
