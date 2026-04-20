@@ -1,0 +1,32 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run RealtimeTranscribe (MacCatalyst)",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--project",
+        "${workspaceFolder}/src/RealtimeTranscribe/RealtimeTranscribe.csproj",
+        "-f",
+        "net10.0-maccatalyst"
+      ],
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "Clean RealtimeTranscribe"
+      ],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "Clean RealtimeTranscribe",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "clean",
+        "${workspaceFolder}/src/RealtimeTranscribe/RealtimeTranscribe.csproj"
+      ],
+      "problemMatcher": "$msCompile"
+    }
+  ]
+}
