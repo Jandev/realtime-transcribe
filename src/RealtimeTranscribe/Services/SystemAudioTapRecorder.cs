@@ -116,7 +116,7 @@ internal sealed class SystemAudioTapRecorder : IDisposable
         {
             DestroyAll();
             throw new InvalidOperationException(
-                "Failed to read kAudioHardwarePropertyDefaultSystemOutputDevice. " +
+                "Failed to read kAudioHardwarePropertyDefaultOutputDevice. " +
                 "The system has no default audio output device — connect speakers/headphones and try again.");
         }
         string? outputUid = GetStringProperty(outputDeviceId, kAudioDevicePropertyDeviceUID, kAudioObjectPropertyScopeGlobal);
