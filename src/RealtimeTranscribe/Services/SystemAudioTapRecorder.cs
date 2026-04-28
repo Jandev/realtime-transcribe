@@ -95,6 +95,8 @@ internal sealed class SystemAudioTapRecorder : IDisposable
         }
 
         // ---- 2. Build a private aggregate device that contains the tap ------------
+        // Read the runtime UID assigned to the tap.  This is what we reference from the
+        // aggregate device's sub-tap list so CoreAudio knows which tap to wire up.
         var tapUid = GetStringProperty(_tapId, kAudioTapPropertyUID, kAudioObjectPropertyScopeGlobal);
         if (tapUid is null)
         {
@@ -102,18 +104,56 @@ internal sealed class SystemAudioTapRecorder : IDisposable
             throw new InvalidOperationException("Failed to read kAudioTapPropertyUID from new tap.");
         }
 
+        // The aggregate device needs a real output device to act as its clock source.
+        // Without `master` / `clock` / `subdevices` the aggregate has no rate reference,
+        // its IOProc is never ticked, and the tap silently produces zero frames — which
+        // is exactly the "recording succeeds but transcript is empty" symptom.
+        // We use the system's *default output* device (the one currently playing audio,
+        // e.g. AirPods, Built-in Output, etc.); this is what Apple's AudioCap sample and
+        // the open-source Yogurt reference implementation both do.
+        uint outputDeviceId = GetDefaultSystemOutputDeviceId();
+        if (outputDeviceId == 0)
+        {
+            DestroyAll();
+            throw new InvalidOperationException(
+                "Failed to read kAudioHardwarePropertyDefaultSystemOutputDevice. " +
+                "The system has no default audio output device — connect speakers/headphones and try again.");
+        }
+        string? outputUid = GetStringProperty(outputDeviceId, kAudioDevicePropertyDeviceUID, kAudioObjectPropertyScopeGlobal);
+        if (string.IsNullOrEmpty(outputUid))
+        {
+            DestroyAll();
+            throw new InvalidOperationException(
+                "Failed to read the UID of the default system output device. " +
+                "The output device must expose a UID so it can be used as the aggregate device's clock source.");
+        }
+
         using var aggDict = new NSMutableDictionary
         {
-            [(NSString)kAudioAggregateDeviceUIDKey]       = (NSString)("com.jandev.realtimetranscribe.tap." + Guid.NewGuid().ToString("N")),
-            [(NSString)kAudioAggregateDeviceNameKey]      = (NSString)"RealtimeTranscribe System Audio",
-            [(NSString)kAudioAggregateDeviceIsPrivateKey] = NSNumber.FromBoolean(true),
-            [(NSString)kAudioAggregateDeviceIsStackedKey] = NSNumber.FromBoolean(false),
+            [(NSString)kAudioAggregateDeviceUIDKey]               = (NSString)("com.jandev.realtimetranscribe.tap." + Guid.NewGuid().ToString("N")),
+            [(NSString)kAudioAggregateDeviceNameKey]              = (NSString)"RealtimeTranscribe System Audio",
+            [(NSString)kAudioAggregateDeviceIsPrivateKey]         = NSNumber.FromBoolean(true),
+            [(NSString)kAudioAggregateDeviceIsStackedKey]         = NSNumber.FromBoolean(false),
+            // Pick the output device as both the master sub-device and the clock device,
+            // so the aggregate inherits its sample rate / clock from real hardware.
+            [(NSString)kAudioAggregateDeviceMasterSubDeviceKey]   = (NSString)outputUid,
+            [(NSString)kAudioAggregateDeviceClockDeviceKey]       = (NSString)outputUid,
+            // Ask CoreAudio to start the tap automatically when the aggregate device starts.
+            [(NSString)kAudioAggregateDeviceTapAutoStartKey]      = NSNumber.FromBoolean(true),
         };
+
+        using var subDeviceDict = new NSMutableDictionary
+        {
+            [(NSString)kAudioSubDeviceUIDKey] = (NSString)outputUid,
+        };
+        using var subDeviceList = NSArray.FromNSObjects(subDeviceDict)!;
+        aggDict[(NSString)kAudioAggregateDeviceSubDeviceListKey] = subDeviceList;
 
         using var subTapDict = new NSMutableDictionary
         {
             [(NSString)kAudioSubTapUIDKey]                  = (NSString)tapUid,
-            [(NSString)kAudioSubTapDriftCompensationKey]    = NSNumber.FromBoolean(false),
+            // Drift-compensate the tap against the output device's clock.
+            [(NSString)kAudioSubTapDriftCompensationKey]    = NSNumber.FromBoolean(true),
         };
         using var tapList = NSArray.FromNSObjects(subTapDict)!;
         aggDict[(NSString)kAudioAggregateDeviceTapListKey] = tapList;
@@ -123,16 +163,37 @@ internal sealed class SystemAudioTapRecorder : IDisposable
         {
             DestroyAll();
             throw new InvalidOperationException(
-                $"AudioHardwareCreateAggregateDevice failed (OSStatus {status}).");
+                $"AudioHardwareCreateAggregateDevice failed (OSStatus {status}{FormatOsStatusFourCc(status)}).");
         }
 
-        // ---- 3. Query the input stream format so we can transcode to 16-bit WAV ---
-        if (!QueryStreamFormat(_aggregateDeviceId,
+        // ---- 3. Query the tap's stream format so we can transcode to 16-bit WAV ---
+        // The aggregate device's input stream format may be wrong/empty until the device
+        // is started, but the tap itself always reports its real, fixed output format
+        // (Float32, sample rate of the output device, 2 channels for the stereo global tap).
+        if (!QueryTapStreamFormat(_tapId,
                 out _sampleRate, out _channelsPerFrame, out _bitsPerChannel,
                 out _isFloatFormat, out _isInterleaved))
         {
-            DestroyAll();
-            throw new InvalidOperationException("Failed to query aggregate device input stream format.");
+            // Fall back to the aggregate device's input scope if the tap doesn't expose its format.
+            if (!QueryStreamFormat(_aggregateDeviceId,
+                    out _sampleRate, out _channelsPerFrame, out _bitsPerChannel,
+                    out _isFloatFormat, out _isInterleaved))
+            {
+                DestroyAll();
+                throw new InvalidOperationException("Failed to query tap / aggregate device stream format.");
+            }
+        }
+        // Sanity defaults: a stereo global tap is always Float32 PCM at the output device's
+        // sample rate.  If the OS reports nonsense we substitute reasonable values so the
+        // WAV header and IOProc maths stay self-consistent rather than producing silence.
+        if (_sampleRate <= 0)
+            _sampleRate = 48000;
+        if (_channelsPerFrame == 0)
+            _channelsPerFrame = 2;
+        if (_bitsPerChannel == 0)
+        {
+            _bitsPerChannel = 32;
+            _isFloatFormat = true;
         }
 
         // ---- 4. Install the IOProc and start the device ----------------------------
@@ -516,15 +577,31 @@ internal sealed class SystemAudioTapRecorder : IDisposable
     private const string kAudioAggregateDeviceIsPrivateKey = "private";
     private const string kAudioAggregateDeviceIsStackedKey = "stacked";
     private const string kAudioAggregateDeviceTapListKey   = "taps";
+    // The aggregate device needs a real hardware sub-device to act as its clock source,
+    // otherwise it produces no audio frames.  These four keys are mandatory when the
+    // aggregate is used to host a CATap; their absence is the classic "tap recording is
+    // silent" symptom.
+    private const string kAudioAggregateDeviceMasterSubDeviceKey = "master";
+    private const string kAudioAggregateDeviceClockDeviceKey     = "clock";
+    private const string kAudioAggregateDeviceSubDeviceListKey   = "subdevices";
+    private const string kAudioAggregateDeviceTapAutoStartKey    = "tapautostart";
+    private const string kAudioSubDeviceUIDKey             = "uid";
     private const string kAudioSubTapUIDKey                = "uid";
     private const string kAudioSubTapDriftCompensationKey  = "drift";
 
     private const uint kAudioObjectPropertyScopeGlobal = 0x676C6F62u; // 'glob'
     private const uint kAudioObjectPropertyScopeInput  = 0x696E7074u; // 'inpt'
     private const uint kAudioObjectPropertyElementMain = 0;
+    private const uint kAudioObjectSystemObject        = 1u;          // kAudioObjectSystemObject
     private const uint kAudioTapPropertyUID            = 0x74756964u; // 'tuid'
+    private const uint kAudioTapPropertyFormat         = 0x666D7420u; // 'fmt '
     private const uint kAudioObjectPropertyName        = 0x6C6E616Du; // 'lnam'
     private const uint kAudioDevicePropertyStreamFormat = 0x73666D74u; // 'sfmt'
+    private const uint kAudioDevicePropertyDeviceUID   = 0x75696420u; // 'uid '
+    // 'dOut' — default output device (the one the user is actually playing audio through,
+    // e.g. AirPods). This is the right clock source for a system-wide tap because the tap
+    // captures audio destined for this device.
+    private const uint kAudioHardwarePropertyDefaultOutputDevice = 0x644F7574u; // 'dOut'
 
     // AudioFormatFlags
     private const uint kAudioFormatFlagIsFloat        = 1u << 0;
@@ -636,6 +713,83 @@ internal sealed class SystemAudioTapRecorder : IDisposable
             isFloat        = (desc.mFormatFlags & kAudioFormatFlagIsFloat) != 0;
             isInterleaved  = (desc.mFormatFlags & kAudioFormatFlagIsNonInterleaved) == 0;
             return true;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buf);
+        }
+    }
+
+    /// <summary>
+    /// Reads the AudioStreamBasicDescription advertised by the tap itself
+    /// (<c>kAudioTapPropertyFormat</c>). This is more reliable than reading the host
+    /// aggregate device's stream format, because the tap reports its real fixed format
+    /// (Float32 PCM at the output device's sample rate, 2 channels for the stereo global
+    /// tap) immediately after creation, while the aggregate device's format may still be
+    /// uninitialised until the IOProc starts running.
+    /// </summary>
+    private static bool QueryTapStreamFormat(uint tapId,
+        out double sampleRate, out uint channels, out uint bitsPerChannel,
+        out bool isFloat, out bool isInterleaved)
+    {
+        sampleRate = 0;
+        channels = 0;
+        bitsPerChannel = 0;
+        isFloat = false;
+        isInterleaved = true;
+
+        var addr = new AudioObjectPropertyAddress
+        {
+            mSelector = kAudioTapPropertyFormat,
+            mScope    = kAudioObjectPropertyScopeGlobal,
+            mElement  = kAudioObjectPropertyElementMain,
+        };
+
+        uint size = (uint)Marshal.SizeOf<AudioStreamBasicDescription>();
+        IntPtr buf = Marshal.AllocHGlobal((int)size);
+        try
+        {
+            int status = AudioObjectGetPropertyData(tapId, in addr, 0, IntPtr.Zero, ref size, buf);
+            if (status != 0)
+                return false;
+
+            var desc = Marshal.PtrToStructure<AudioStreamBasicDescription>(buf);
+            sampleRate     = desc.mSampleRate;
+            channels       = desc.mChannelsPerFrame;
+            bitsPerChannel = desc.mBitsPerChannel;
+            isFloat        = (desc.mFormatFlags & kAudioFormatFlagIsFloat) != 0;
+            isInterleaved  = (desc.mFormatFlags & kAudioFormatFlagIsNonInterleaved) == 0;
+            return true;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buf);
+        }
+    }
+
+    /// <summary>
+    /// Returns the AudioObjectID of the system's default audio output device — the device
+    /// the user currently plays audio through (e.g. AirPods, Built-in Output). Used as the
+    /// clock and master sub-device for the aggregate device that hosts the tap. Returns 0
+    /// on failure.
+    /// </summary>
+    private static uint GetDefaultSystemOutputDeviceId()
+    {
+        var addr = new AudioObjectPropertyAddress
+        {
+            mSelector = kAudioHardwarePropertyDefaultOutputDevice,
+            mScope    = kAudioObjectPropertyScopeGlobal,
+            mElement  = kAudioObjectPropertyElementMain,
+        };
+
+        uint size = sizeof(uint);
+        IntPtr buf = Marshal.AllocHGlobal((int)size);
+        try
+        {
+            int status = AudioObjectGetPropertyData(kAudioObjectSystemObject, in addr, 0, IntPtr.Zero, ref size, buf);
+            if (status != 0)
+                return 0;
+            return (uint)Marshal.ReadInt32(buf);
         }
         finally
         {
