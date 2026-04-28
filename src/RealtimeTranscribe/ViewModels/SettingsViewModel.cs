@@ -31,6 +31,7 @@ public partial class SettingsViewModel : ObservableObject
         _whisperDeployment = Preferences.Default.Get(nameof(WhisperDeployment), _settings.WhisperDeploymentName);
         _chatDeployment = Preferences.Default.Get(nameof(ChatDeployment), _settings.ChatDeploymentName);
         _outputFolder = Preferences.Default.Get(nameof(OutputFolder), string.Empty);
+        _systemPromptFilePath = Preferences.Default.Get(nameof(SystemPromptFilePath), _settings.SystemPromptFilePath);
     }
 
     [ObservableProperty]
@@ -49,6 +50,9 @@ public partial class SettingsViewModel : ObservableObject
     private string _outputFolder;
 
     [ObservableProperty]
+    private string _systemPromptFilePath;
+
+    [ObservableProperty]
     private string _saveStatus = string.Empty;
 
     [RelayCommand]
@@ -60,6 +64,23 @@ public partial class SettingsViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private async Task BrowseSystemPromptFileAsync()
+    {
+        var result = await FilePicker.Default.PickAsync(new PickOptions
+        {
+            PickerTitle = "Select system prompt Markdown file",
+            FileTypes = new FilePickerFileType(new Dictionary<DevicePlatform, IEnumerable<string>>
+            {
+                { DevicePlatform.MacCatalyst, new[] { "net.daringfireball.markdown", "public.plain-text" } },
+                { DevicePlatform.WinUI, new[] { ".md", ".txt" } },
+            })
+        });
+
+        if (result != null)
+            SystemPromptFilePath = result.FullPath;
+    }
+
+    [RelayCommand]
     private void Save()
     {
         Preferences.Default.Set(nameof(Endpoint), Endpoint);
@@ -67,12 +88,14 @@ public partial class SettingsViewModel : ObservableObject
         Preferences.Default.Set(nameof(WhisperDeployment), WhisperDeployment);
         Preferences.Default.Set(nameof(ChatDeployment), ChatDeployment);
         Preferences.Default.Set(nameof(OutputFolder), OutputFolder);
+        Preferences.Default.Set(nameof(SystemPromptFilePath), SystemPromptFilePath);
 
         // Update the shared settings object so the TranscriptionService picks up the new values
         _settings.Endpoint = Endpoint;
         _settings.ApiKey = ApiKey;
         _settings.WhisperDeploymentName = WhisperDeployment;
         _settings.ChatDeploymentName = ChatDeployment;
+        _settings.SystemPromptFilePath = SystemPromptFilePath;
 
         // Update the file storage service so it uses the new folder immediately
         _fileStorageService.OutputFolder = OutputFolder;

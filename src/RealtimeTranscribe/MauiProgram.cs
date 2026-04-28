@@ -43,6 +43,7 @@ public static class MauiProgram
         azureSettings.ApiKey = Preferences.Default.Get("ApiKey", azureSettings.ApiKey);
         azureSettings.WhisperDeploymentName = Preferences.Default.Get("WhisperDeployment", azureSettings.WhisperDeploymentName);
         azureSettings.ChatDeploymentName = Preferences.Default.Get("ChatDeployment", azureSettings.ChatDeploymentName);
+        azureSettings.SystemPromptFilePath = Preferences.Default.Get("SystemPromptFilePath", azureSettings.SystemPromptFilePath);
 
         // Register as singleton so SettingsViewModel can mutate it at runtime
         builder.Services.AddSingleton(azureSettings);

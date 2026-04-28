@@ -85,4 +85,21 @@ public class AzureOpenAISettingsTests
         Assert.Equal("gpt-4o-mini", settings.ChatDeploymentName);
         Assert.False(string.IsNullOrEmpty(settings.ApiKey));
     }
+
+    [Fact]
+    public void DefaultSystemPromptFilePath_IsEmpty()
+    {
+        var settings = new AzureOpenAISettings();
+
+        Assert.Equal(string.Empty, settings.SystemPromptFilePath);
+    }
+
+    [Fact]
+    public void SystemPromptFilePath_CanBeConfigured()
+    {
+        const string path = "/Users/me/prompts/context.md";
+        var settings = new AzureOpenAISettings { SystemPromptFilePath = path };
+
+        Assert.Equal(path, settings.SystemPromptFilePath);
+    }
 }
