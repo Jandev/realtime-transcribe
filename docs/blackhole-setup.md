@@ -2,7 +2,7 @@
 
 Realtime Transcribe can capture **system audio** (anything that plays on your Mac, including audio from Teams, Zoom, browser tabs, music apps) in two ways:
 
-1. **Built-in (recommended, macOS 14.2+):** select **"System Audio (all apps)"** at the top of the Input device list inside the app. This uses the CoreAudio Process Tap API and works with any output device — including AirPods and other Bluetooth headphones — with no extra setup. The first time you select it, macOS will prompt you to allow system-audio capture.
+1. **Built-in (recommended, macOS 14.2+):** select **"System Audio (all apps)"** at the top of the Input device list inside the app. This uses the CoreAudio Process Tap API and works with any output device — including AirPods and other Bluetooth headphones — with no extra setup. The first time you select it, macOS will prompt you to allow system-audio capture. See [System Audio Capture](system-audio-setup.md) for details and troubleshooting.
 2. **BlackHole (fallback, older macOS or special routing needs):** the steps below describe the manual virtual-loopback setup that was required before the built-in option existed.
 
 > **Tip:** If you only want to record your own microphone, just pick the built-in microphone (or another physical input device) in the app's Devices tab — neither the built-in System Audio entry nor BlackHole is needed.

@@ -82,7 +82,10 @@ internal sealed class SystemAudioTapRecorder : IDisposable
             ReleaseObject(ref _tapDescriptionHandle);
             throw new InvalidOperationException(
                 $"AudioHardwareCreateProcessTap failed (OSStatus {status}). " +
-                "Ensure the app has the system-audio capture permission.");
+                "Ensure the app has the system-audio capture permission: " +
+                "open System Settings → Privacy & Security → Screen & System Audio Recording " +
+                "(or Screen Recording on macOS 14), find Realtime Transcribe, and toggle it on. " +
+                "You may need to quit and relaunch the app for the change to take effect.");
         }
 
         // ---- 2. Build a private aggregate device that contains the tap ------------
