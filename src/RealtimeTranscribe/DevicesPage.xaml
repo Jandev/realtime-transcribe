@@ -39,7 +39,7 @@
             <Label
                 FontSize="13"
                 Margin="4,0,0,8"
-                Text="Select the microphone or audio input source to record from."
+                Text="Select the microphone or audio source to record from. Choose &quot;System Audio (all apps)&quot; to capture everything you hear — works with AirPods and any other output device."
                 TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray500}}" />
 
             <Border Margin="0,0,0,24">
@@ -88,59 +88,13 @@
             </Border>
 
             <!-- ── Output Devices ─────────────────────────────────────── -->
-            <Label
-                Style="{StaticResource SectionHeader}"
-                Text="OUTPUT DEVICES"
-                Margin="4,0,0,6" />
-
-            <Label
-                FontSize="13"
-                Margin="4,0,0,8"
-                Text="The currently active audio output. To record system audio, configure a loopback device (e.g. BlackHole) in macOS Audio MIDI Setup."
-                TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray500}}" />
-
-            <Border Margin="0,0,0,32">
-                <ScrollView
-                    MinimumHeightRequest="220"
-                    MaximumHeightRequest="440">
-                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding OutputDevices}">
-                        <BindableLayout.EmptyView>
-                            <Label
-                                Margin="16,12"
-                                FontSize="15"
-                                Text="No output devices found. Tap Refresh to scan again."
-                                TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray500}}" />
-                        </BindableLayout.EmptyView>
-                        <BindableLayout.ItemTemplate>
-                            <DataTemplate x:DataType="vm:SelectableAudioDevice">
-                                <Grid
-                                    ColumnDefinitions="32,*"
-                                    Padding="16,12"
-                                    MinimumHeightRequest="44">
-                                    <Grid.GestureRecognizers>
-                                        <TapGestureRecognizer
-                                            Command="{Binding Source={x:Reference DevicesPageRoot}, Path=BindingContext.SelectOutputDeviceCommand}"
-                                            CommandParameter="{Binding .}" />
-                                    </Grid.GestureRecognizers>
-                                    <Label
-                                        Grid.Column="0"
-                                        FontSize="17"
-                                        Text="✓"
-                                        TextColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
-                                        VerticalOptions="Center"
-                                        HorizontalOptions="Center"
-                                        IsVisible="{Binding IsSelected}" />
-                                    <Label
-                                        Grid.Column="1"
-                                        FontSize="17"
-                                        Text="{Binding Device.Name}"
-                                        VerticalOptions="Center" />
-                                </Grid>
-                            </DataTemplate>
-                        </BindableLayout.ItemTemplate>
-                    </VerticalStackLayout>
-                </ScrollView>
-            </Border>
+            <!--
+                There is intentionally no Output device picker.  CoreAudio does not let an
+                application choose where the system plays audio — that is controlled by the
+                user via System Settings → Sound.  To *capture* audio that plays through any
+                output device (including AirPods and other Bluetooth headphones), select the
+                "System Audio (all apps)" entry at the top of the input list above.
+            -->
 
         </VerticalStackLayout>
     </ScrollView>

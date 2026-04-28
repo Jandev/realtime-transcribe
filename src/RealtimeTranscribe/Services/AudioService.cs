@@ -27,13 +27,11 @@ namespace RealtimeTranscribe.Services;
 public sealed class AudioService : IAudioService, IDisposable
 {
     private const string InputDevicePreferenceKey = "SelectedInputDeviceId";
-    private const string OutputDevicePreferenceKey = "SelectedOutputDeviceId";
 
     private readonly IAudioManager _audioManager;
     private IAudioRecorder? _recorder;
 
     private string? _selectedInputDeviceId;
-    private string? _selectedOutputDeviceId;
 
 #if MACCATALYST || IOS
     private IDisposable? _routeChangeToken;
@@ -46,12 +44,9 @@ public sealed class AudioService : IAudioService, IDisposable
     {
         _audioManager = audioManager;
 
-        // Restore persisted device selections.
+        // Restore persisted device selection.
         var savedInput = Preferences.Default.Get(InputDevicePreferenceKey, string.Empty);
         _selectedInputDeviceId = string.IsNullOrEmpty(savedInput) ? null : savedInput;
-
-        var savedOutput = Preferences.Default.Get(OutputDevicePreferenceKey, string.Empty);
-        _selectedOutputDeviceId = string.IsNullOrEmpty(savedOutput) ? null : savedOutput;
 
         SubscribeToAudioRouteChanges();
     }
@@ -109,37 +104,16 @@ public sealed class AudioService : IAudioService, IDisposable
         return Array.Empty<AudioDevice>();
     }
 
-    public IReadOnlyList<AudioDevice> GetOutputDevices()
-    {
-#if MACCATALYST
-        return GetCoreAudioDevices(inputScope: false);
-#elif IOS
-        var session = AVAudioSession.SharedInstance();
-        var outputs = session.CurrentRoute?.Outputs;
-        if (outputs is { Length: > 0 })
-            return outputs.Select(p => new AudioDevice($"{p.PortType}:{p.PortName}", p.PortName)).ToArray();
-#endif
-        return Array.Empty<AudioDevice>();
-    }
-
     // ------------------------------------------------------------------
     // Device selection
     // ------------------------------------------------------------------
 
     public string? SelectedInputDeviceId => _selectedInputDeviceId;
-    public string? SelectedOutputDeviceId => _selectedOutputDeviceId;
 
     public void SetSelectedInputDevice(string? deviceId)
     {
         _selectedInputDeviceId = deviceId;
         Preferences.Default.Set(InputDevicePreferenceKey, deviceId ?? string.Empty);
-        DeviceSelectionChanged?.Invoke(this, EventArgs.Empty);
-    }
-
-    public void SetSelectedOutputDevice(string? deviceId)
-    {
-        _selectedOutputDeviceId = deviceId;
-        Preferences.Default.Set(OutputDevicePreferenceKey, deviceId ?? string.Empty);
         DeviceSelectionChanged?.Invoke(this, EventArgs.Empty);
     }
 
