@@ -8,6 +8,7 @@ On macOS 14.2 (Sonoma) and later, Realtime Transcribe can capture **all system a
 - [Granting the permission](#granting-the-permission)
 - [Troubleshooting](#troubleshooting)
   - ["Ensure the app has the system-audio capture permission"](#ensure-the-app-has-the-system-audio-capture-permission)
+  - [App Sandbox blocks the Process Tap API](#app-sandbox-blocks-the-process-tap-api)
   - [No permission prompt appeared](#no-permission-prompt-appeared)
   - [I denied the permission — how do I re-enable it?](#i-denied-the-permission--how-do-i-re-enable-it)
   - [macOS version too old](#macos-version-too-old)
@@ -40,9 +41,28 @@ Click **Allow** to grant the permission. macOS remembers this choice; you will n
 
 This error means the CoreAudio Process Tap could not be created. The most common causes:
 
-1. **You denied the permission prompt.** See [I denied the permission — how do I re-enable it?](#i-denied-the-permission--how-do-i-re-enable-it) below.
-2. **The permission prompt never appeared.** See [No permission prompt appeared](#no-permission-prompt-appeared).
-3. **You are running macOS older than 14.2.** See [macOS version too old](#macos-version-too-old).
+1. **You denied the permission prompt** — see [I denied the permission — how do I re-enable it?](#i-denied-the-permission--how-do-i-re-enable-it) below.
+2. **The permission prompt never appeared** — see [No permission prompt appeared](#no-permission-prompt-appeared).
+3. **The app is sandboxed** — see [App Sandbox blocks the Process Tap API](#app-sandbox-blocks-the-process-tap-api). This is the most common cause when the toggles in System Settings are already on but recording still fails.
+4. **You are running macOS older than 14.2** — see [macOS version too old](#macos-version-too-old).
+
+### App Sandbox blocks the Process Tap API
+
+If you have already enabled **Realtime Transcribe** in **both** of these panes —
+
+- *Privacy & Security → Screen & System Audio Recording*, **and**
+- *Privacy & Security → System Audio Recording Only*
+
+— and you still get the "Ensure the app has the system-audio capture permission" error, the app you are running is **sandboxed**. The CoreAudio Process Tap API (`AudioHardwareCreateProcessTap`) does not work inside the macOS App Sandbox: granting the user-facing TCC permissions is necessary but not sufficient. This is a hard OS-level restriction; Apple's own Process Tap reference sample (AudioCap) is non-sandboxed for the same reason.
+
+The error message in the latest build will additionally show the underlying `OSStatus` as a four-character code. A code such as `'what'` (`kAudioHardwareIllegalOperationError`) is the typical symptom of a sandbox block.
+
+**How to fix it:**
+
+- **Use the official release.** The pre-built `.app` bundle published on the [Releases page](https://github.com/Jandev/realtime-transcribe/releases) is **not** sandboxed and supports system-audio capture out of the box.
+- **If you built from source yourself** with sandboxing enabled, rebuild after making sure `src/RealtimeTranscribe/Platforms/MacCatalyst/Entitlements.plist` does **not** contain a `com.apple.security.app-sandbox` key set to `true`. The version in the repository already has it removed.
+
+> **Trade-off:** Removing the sandbox means the app cannot be distributed through the Mac App Store. Since Realtime Transcribe is distributed as an unsigned `.app` bundle from GitHub Releases, this is not a problem in practice.
 
 ### No permission prompt appeared
 

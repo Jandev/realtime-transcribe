@@ -2,17 +2,21 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- App Sandbox (required for Mac App Store distribution) -->
-	<key>com.apple.security.app-sandbox</key>
-	<true/>
-	<!-- Microphone / audio input access via the CoreAudio HAL -->
-	<key>com.apple.security.device.audio-input</key>
-	<true/>
-	<!-- Outbound network connections (Azure OpenAI API) -->
+	<!-- App Sandbox is intentionally NOT enabled.
+	     The CoreAudio Process Tap API (AudioHardwareCreateProcessTap, used for the
+	     "System Audio (all apps)" recording mode on macOS 14.2+) does not work inside
+	     the App Sandbox: granting the user-facing TCC permissions ("Screen & System
+	     Audio Recording" and "System Audio Recording Only") is necessary but not
+	     sufficient — the sandbox blocks the underlying CoreAudio HAL operations
+	     regardless. Apple's own Process Tap reference sample (AudioCap) is also
+	     non-sandboxed for the same reason.
+	     The app is distributed as an unsigned .app bundle outside the Mac App Store,
+	     so the sandbox provides no distribution benefit here. If you ever need to
+	     ship through the Mac App Store you will need to remove the system-audio
+	     capture feature (or replace it with ScreenCaptureKit's audio-only API). -->
+	<!-- Outbound network connections (Azure OpenAI API). Harmless without sandbox;
+	     kept for documentation and in case sandboxing is ever re-enabled. -->
 	<key>com.apple.security.network.client</key>
-	<true/>
-	<!-- Read/write access to folders the user selects via FolderPicker -->
-	<key>com.apple.security.files.user-selected.read-write</key>
 	<true/>
 </dict>
 </plist>

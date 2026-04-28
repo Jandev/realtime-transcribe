@@ -81,11 +81,17 @@ internal sealed class SystemAudioTapRecorder : IDisposable
         {
             ReleaseObject(ref _tapDescriptionHandle);
             throw new InvalidOperationException(
-                $"AudioHardwareCreateProcessTap failed (OSStatus {status}). " +
-                "Ensure the app has the system-audio capture permission: " +
-                "open System Settings → Privacy & Security → Screen & System Audio Recording " +
-                "(or Screen Recording on macOS 14), find Realtime Transcribe, and toggle it on. " +
-                "You may need to quit and relaunch the app for the change to take effect.");
+                $"AudioHardwareCreateProcessTap failed (OSStatus {status}{FormatOsStatusFourCc(status)}). " +
+                "This usually means one of the following:\n" +
+                "  • The app is missing system-audio capture permission. Open System Settings → " +
+                "Privacy & Security → Screen & System Audio Recording (or Screen Recording on macOS 14), " +
+                "find Realtime Transcribe, toggle it on, then quit and relaunch the app.\n" +
+                "  • The app is running inside the macOS App Sandbox. The Process Tap API does not " +
+                "work in sandboxed apps, even with the TCC permission granted. Use the released, " +
+                "non-sandboxed .app bundle from GitHub Releases (or build it yourself — see " +
+                "docs/system-audio-setup.md).\n" +
+                "  • You are running macOS older than 14.2. Use the BlackHole-based fallback instead " +
+                "(see docs/blackhole-setup.md).");
         }
 
         // ---- 2. Build a private aggregate device that contains the tap ------------
@@ -465,6 +471,31 @@ internal sealed class SystemAudioTapRecorder : IDisposable
             return;
         IntPtr_objc_msgSend(handle, Selector.GetHandle("release"));
         handle = IntPtr.Zero;
+    }
+
+    /// <summary>
+    /// Decodes a CoreAudio <c>OSStatus</c> as its FourCC representation when the four
+    /// bytes are printable ASCII (e.g. <c>'what'</c> for <c>kAudioHardwareIllegalOperationError</c>).
+    /// Returns an empty string for non-printable codes so the caller can append unconditionally.
+    /// </summary>
+    private static string FormatOsStatusFourCc(int status)
+    {
+        if (status == 0)
+            return string.Empty;
+
+        Span<byte> bytes = stackalloc byte[4];
+        bytes[0] = (byte)((status >> 24) & 0xFF);
+        bytes[1] = (byte)((status >> 16) & 0xFF);
+        bytes[2] = (byte)((status >> 8)  & 0xFF);
+        bytes[3] = (byte)(status         & 0xFF);
+
+        for (int i = 0; i < 4; i++)
+        {
+            if (bytes[i] < 0x20 || bytes[i] > 0x7E)
+                return string.Empty;
+        }
+
+        return $" / '{(char)bytes[0]}{(char)bytes[1]}{(char)bytes[2]}{(char)bytes[3]}'";
     }
 
     [DllImport("/usr/lib/libobjc.dylib", EntryPoint = "objc_msgSend")]
