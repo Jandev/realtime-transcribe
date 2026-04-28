@@ -302,6 +302,9 @@ public sealed class AudioService : IAudioService, IDisposable
 
         // Re-configure the session so that a non-Bluetooth input selection does not force
         // Bluetooth output devices (AirPods, etc.) into the lower-quality HFP/SCO mode.
+        // Note: the SystemAudioDeviceId guard above guarantees _selectedInputDeviceId is
+        // a real CoreAudio device UID at this point, so passing it to
+        // IsCoreAudioDeviceBluetooth / SetCoreAudioDefaultInputDevice is safe.
         bool inputIsBluetooth = IsCoreAudioDeviceBluetooth(_selectedInputDeviceId);
         var session = AVAudioSession.SharedInstance();
         var opts = inputIsBluetooth
