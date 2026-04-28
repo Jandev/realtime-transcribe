@@ -1,5 +1,14 @@
 # BlackHole & macOS Audio Setup
 
+Realtime Transcribe can capture **system audio** (anything that plays on your Mac, including audio from Teams, Zoom, browser tabs, music apps) in two ways:
+
+1. **Built-in (recommended, macOS 14.2+):** select **"System Audio (all apps)"** at the top of the Input device list inside the app. This uses the CoreAudio Process Tap API and works with any output device — including AirPods and other Bluetooth headphones — with no extra setup. The first time you select it, macOS will prompt you to allow system-audio capture.
+2. **BlackHole (fallback, older macOS or special routing needs):** the steps below describe the manual virtual-loopback setup that was required before the built-in option existed.
+
+> **Tip:** If you only want to record your own microphone, just pick the built-in microphone (or another physical input device) in the app's Devices tab — neither the built-in System Audio entry nor BlackHole is needed.
+
+---
+
 [BlackHole](https://existential.audio/blackhole/) is a free virtual audio driver for macOS that routes system audio (e.g. from Teams or Zoom) into a recording device alongside your microphone.
 
 ## Table of Contents
@@ -101,9 +110,9 @@ profile throughout the recording.
 
 ### Capturing system audio through AirPods / Bluetooth output devices
 
-Bluetooth devices — including AirPods Pro — cannot be used as a *loopback* input device.
-They receive audio from the Mac but have no way to feed that audio back as a recording
-input.  To capture system audio that plays through AirPods, you still need **BlackHole**:
+> **The easiest way is to use the built-in option:** select **"System Audio (all apps)"** at the top of the Input device list in the app's Devices tab. This works with AirPods and any other output device, requires no Audio MIDI Setup configuration, and avoids every Bluetooth-aggregate-device pitfall described below. It is available on macOS 14.2 and later.
+
+If you are on an older macOS or need the BlackHole-based routing for another reason, Bluetooth devices — including AirPods Pro — cannot be used as a *loopback* input device themselves. They receive audio from the Mac but have no way to feed that audio back as a recording input. To capture system audio that plays through AirPods, you can still use **BlackHole**:
 
 1. Create a **Multi-Output Device** in Audio MIDI Setup with both **BlackHole 2ch** and
    **AirPods Pro** checked (see [Create a Multi-Output Device](#create-a-multi-output-device)).

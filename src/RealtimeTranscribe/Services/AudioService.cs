@@ -31,6 +31,14 @@ public sealed class AudioService : IAudioService, IDisposable
     private readonly IAudioManager _audioManager;
     private IAudioRecorder? _recorder;
 
+#if MACCATALYST
+    // Active when the user has selected the synthetic "System Audio (all apps)" entry.
+    // Captures the system audio mix via the CoreAudio Process Tap API, bypassing the
+    // physical-input recorder entirely.  Mutually exclusive with _recorder — exactly
+    // one of the two is non-null while a session is active.
+    private SystemAudioTapRecorder? _systemAudioRecorder;
+#endif
+
     private string? _selectedInputDeviceId;
 
 #if MACCATALYST || IOS
@@ -51,7 +59,17 @@ public sealed class AudioService : IAudioService, IDisposable
         SubscribeToAudioRouteChanges();
     }
 
-    public bool IsRecording => _recorder?.IsRecording ?? false;
+    public bool IsRecording
+    {
+        get
+        {
+#if MACCATALYST
+            if (_systemAudioRecorder is { IsRecording: true })
+                return true;
+#endif
+            return _recorder?.IsRecording ?? false;
+        }
+    }
 
     // ------------------------------------------------------------------
     // Device enumeration
@@ -75,7 +93,7 @@ public sealed class AudioService : IAudioService, IDisposable
         // BlackHole.  The HAL is the authoritative source for ALL devices.
         var coreAudioDevices = GetCoreAudioDevices(inputScope: true);
         if (coreAudioDevices.Count > 0)
-            return coreAudioDevices;
+            return PrependSystemAudioEntry(coreAudioDevices);
 
         // Fallback: the CoreAudio HAL can return nothing immediately after the user grants
         // microphone permission via the TCC dialog (the new grant has not yet propagated into
@@ -84,9 +102,10 @@ public sealed class AudioService : IAudioService, IDisposable
         // built-in microphone even when the HAL query returns zero results.
         var availableInputs = session.AvailableInputs;
         if (availableInputs is { Length: > 0 })
-            return availableInputs.Select(p => new AudioDevice($"{p.PortType}:{p.PortName}", p.PortName)).ToArray();
+            return PrependSystemAudioEntry(
+                availableInputs.Select(p => new AudioDevice($"{p.PortType}:{p.PortName}", p.PortName)).ToArray());
 
-        return Array.Empty<AudioDevice>();
+        return PrependSystemAudioEntry(Array.Empty<AudioDevice>());
 #elif IOS
         // Set the session category to PlayAndRecord so that AVAudioSession exposes the
         // full set of available input ports: built-in mic, aggregated/virtual devices,
@@ -103,6 +122,25 @@ public sealed class AudioService : IAudioService, IDisposable
 #endif
         return Array.Empty<AudioDevice>();
     }
+
+#if MACCATALYST
+    /// <summary>
+    /// Prepends the synthetic "System Audio (all apps)" entry to the input device list.
+    /// Selecting it routes recording through <see cref="SystemAudioTapRecorder"/> (CoreAudio
+    /// Process Tap) instead of a physical microphone, so the captured audio is exactly
+    /// what the user hears — regardless of which output device (AirPods etc.) is in use.
+    /// </summary>
+    private static IReadOnlyList<AudioDevice> PrependSystemAudioEntry(IReadOnlyList<AudioDevice> physicalDevices)
+    {
+        var systemAudio = new AudioDevice(IAudioService.SystemAudioDeviceId, "System Audio (all apps)");
+        if (physicalDevices.Count == 0)
+            return new[] { systemAudio };
+
+        var combined = new List<AudioDevice>(physicalDevices.Count + 1) { systemAudio };
+        combined.AddRange(physicalDevices);
+        return combined;
+    }
+#endif
 
     // ------------------------------------------------------------------
     // Device selection
@@ -123,6 +161,16 @@ public sealed class AudioService : IAudioService, IDisposable
 
     public async Task StartRecordingAsync()
     {
+#if MACCATALYST
+        if (_selectedInputDeviceId == IAudioService.SystemAudioDeviceId)
+        {
+            // Capture the system audio mix via the CoreAudio Process Tap pipeline.
+            _systemAudioRecorder?.Dispose();
+            _systemAudioRecorder = new SystemAudioTapRecorder();
+            await _systemAudioRecorder.StartAsync();
+            return;
+        }
+#endif
         ApplyPreferredInputDevice();
         _recorder = _audioManager.CreateRecorder();
         await _recorder.StartAsync();
@@ -130,6 +178,25 @@ public sealed class AudioService : IAudioService, IDisposable
 
     public async Task<byte[]> StopRecordingAsync()
     {
+#if MACCATALYST
+        if (_systemAudioRecorder is not null)
+        {
+            try
+            {
+                return await _systemAudioRecorder.StopAsync();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[AudioService] System-audio StopAsync failed: {ex}");
+                return Array.Empty<byte>();
+            }
+            finally
+            {
+                _systemAudioRecorder.Dispose();
+                _systemAudioRecorder = null;
+            }
+        }
+#endif
         if (_recorder is null)
             return Array.Empty<byte>();
 
@@ -155,6 +222,15 @@ public sealed class AudioService : IAudioService, IDisposable
 
     public async Task<byte[]> GetCurrentChunkAsync()
     {
+#if MACCATALYST
+        if (_systemAudioRecorder is { IsRecording: true })
+        {
+            // Snapshot the buffer without tearing down the tap — much cheaper than
+            // re-creating the Process Tap + aggregate device for every chunk, and the
+            // continuous capture means no inter-chunk audio is lost.
+            return _systemAudioRecorder.GetChunk();
+        }
+#endif
         if (_recorder is null || !_recorder.IsRecording)
             return Array.Empty<byte>();
 
@@ -219,6 +295,11 @@ public sealed class AudioService : IAudioService, IDisposable
         if (_selectedInputDeviceId is null)
             return;
 
+        // The synthetic "System Audio" entry is handled by SystemAudioTapRecorder, not
+        // by AVAudioRecorder — there is no physical input port to apply.
+        if (_selectedInputDeviceId == IAudioService.SystemAudioDeviceId)
+            return;
+
         // Re-configure the session so that a non-Bluetooth input selection does not force
         // Bluetooth output devices (AirPods, etc.) into the lower-quality HFP/SCO mode.
         bool inputIsBluetooth = IsCoreAudioDeviceBluetooth(_selectedInputDeviceId);
@@ -259,6 +340,10 @@ public sealed class AudioService : IAudioService, IDisposable
 #if MACCATALYST || IOS
         _routeChangeToken?.Dispose();
         _routeChangeToken = null;
+#endif
+#if MACCATALYST
+        _systemAudioRecorder?.Dispose();
+        _systemAudioRecorder = null;
 #endif
         GC.SuppressFinalize(this);
     }
