@@ -227,6 +227,15 @@ public sealed class AudioService : IAudioService, IDisposable
     /// Plugin.Maui.Audio) picks it up on the next recording start.
     /// </para>
     /// <para>
+    /// On both MacCatalyst and iOS, the <c>AVAudioSession</c> is reconfigured immediately
+    /// before recording.  <c>AllowBluetooth</c> (Hands-Free Profile / HFP) is only
+    /// activated when the chosen input device is itself a Bluetooth microphone.  Omitting
+    /// <c>AllowBluetooth</c> when a non-Bluetooth input is selected prevents the OS from
+    /// downgrading Bluetooth output devices (e.g. AirPods Pro) from the high-quality A2DP
+    /// profile to the low-quality HFP / SCO profile — the "phone-call" audio quality
+    /// change users notice when recording starts.
+    /// </para>
+    /// <para>
     /// On iOS, the standard <c>AVAudioSession.setPreferredInput</c> path is used.
     /// </para>
     /// </summary>
@@ -235,6 +244,16 @@ public sealed class AudioService : IAudioService, IDisposable
 #if MACCATALYST
         if (_selectedInputDeviceId is null)
             return;
+
+        // Re-configure the session so that a non-Bluetooth input selection does not force
+        // Bluetooth output devices (AirPods, etc.) into the lower-quality HFP/SCO mode.
+        bool inputIsBluetooth = IsCoreAudioDeviceBluetooth(_selectedInputDeviceId);
+        var session = AVAudioSession.SharedInstance();
+        var opts = inputIsBluetooth
+            ? AVAudioSessionCategoryOptions.AllowBluetooth | AVAudioSessionCategoryOptions.AllowBluetoothA2DP
+            : AVAudioSessionCategoryOptions.AllowBluetoothA2DP;
+        session.SetCategory(AVAudioSessionCategory.PlayAndRecord, opts, out _);
+        session.SetActive(true, out _);
 
         SetCoreAudioDefaultInputDevice(_selectedInputDeviceId);
 #elif IOS
@@ -246,7 +265,18 @@ public sealed class AudioService : IAudioService, IDisposable
             .FirstOrDefault(p => $"{p.PortType}:{p.PortName}" == _selectedInputDeviceId);
 
         if (preferred is not null)
+        {
+            // Only enable Bluetooth HFP routing if the selected input device requires it.
+            // Using AllowBluetooth with a non-HFP input switches Bluetooth output devices
+            // (e.g. AirPods Pro) from A2DP (high quality) to HFP/SCO (phone-call quality).
+            bool inputIsBluetoothHfp =
+                string.Equals(preferred.PortType.ToString(), "BluetoothHFP", StringComparison.Ordinal);
+            var opts = inputIsBluetoothHfp
+                ? AVAudioSessionCategoryOptions.AllowBluetooth | AVAudioSessionCategoryOptions.AllowBluetoothA2DP
+                : AVAudioSessionCategoryOptions.AllowBluetoothA2DP;
+            session.SetCategory(AVAudioSessionCategory.PlayAndRecord, opts, out _);
             session.SetPreferredInput(preferred, out _);
+        }
 #endif
     }
 
@@ -287,10 +317,13 @@ public sealed class AudioService : IAudioService, IDisposable
     private const uint kAudioDevicePropertyStreams          = 0x73746D23u; // 'stm#'
     private const uint kAudioObjectPropertyName            = 0x6C6E616Du; // 'lnam'
     private const uint kAudioDevicePropertyDeviceUID       = 0x75696420u; // 'uid '
+    private const uint kAudioDevicePropertyTransportType   = 0x7472616Eu; // 'tran'
     private const uint kAudioObjectPropertyScopeGlobal     = 0x676C6F62u; // 'glob'
     private const uint kAudioDevicePropertyScopeInput      = 0x696E7074u; // 'inpt'
     private const uint kAudioDevicePropertyScopeOutput     = 0x6F757470u; // 'outp'
     private const uint kAudioObjectPropertyElementMain     = 0;
+    private const uint kAudioDeviceTransportTypeBluetooth  = 0x626C7565u; // 'blue'
+    private const uint kAudioDeviceTransportTypeBluetoothLE = 0x626C6165u; // 'blae'
 
     [DllImport("/System/Library/Frameworks/CoreAudio.framework/CoreAudio")]
     private static extern int AudioObjectGetPropertyDataSize(
@@ -442,6 +475,77 @@ public sealed class AudioService : IAudioService, IDisposable
         }
 
         System.Diagnostics.Debug.WriteLine($"[AudioService] SetCoreAudioDefaultInputDevice: device UID '{uid}' not found.");
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when the CoreAudio device identified by
+    /// <paramref name="uid"/> has a Bluetooth or Bluetooth LE transport type.
+    /// Used to decide whether <c>AllowBluetooth</c> (HFP) must be enabled in the
+    /// <c>AVAudioSession</c> before recording — omitting it when unnecessary keeps
+    /// Bluetooth output devices (e.g. AirPods Pro) in the high-quality A2DP mode.
+    /// </summary>
+    private static bool IsCoreAudioDeviceBluetooth(string uid)
+    {
+        var devicesAddr = new AudioObjectPropertyAddress
+        {
+            mSelector = kAudioHardwarePropertyDevices,
+            mScope    = kAudioObjectPropertyScopeGlobal,
+            mElement  = kAudioObjectPropertyElementMain,
+        };
+
+        if (AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, in devicesAddr, 0, IntPtr.Zero, out uint dataSize) != 0)
+            return false;
+
+        int deviceCount = (int)(dataSize / sizeof(uint));
+        if (deviceCount == 0)
+            return false;
+
+        var deviceIds = new uint[deviceCount];
+        var gch = GCHandle.Alloc(deviceIds, GCHandleType.Pinned);
+        try
+        {
+            if (AudioObjectGetPropertyData(kAudioObjectSystemObject, in devicesAddr, 0, IntPtr.Zero, ref dataSize, gch.AddrOfPinnedObject()) != 0)
+                return false;
+        }
+        finally
+        {
+            gch.Free();
+        }
+
+        foreach (uint deviceId in deviceIds)
+        {
+            var deviceUid = GetCoreAudioStringProperty(deviceId, kAudioDevicePropertyDeviceUID, kAudioObjectPropertyScopeGlobal);
+            if (deviceUid != uid)
+                continue;
+
+            var transportAddr = new AudioObjectPropertyAddress
+            {
+                mSelector = kAudioDevicePropertyTransportType,
+                mScope    = kAudioObjectPropertyScopeGlobal,
+                mElement  = kAudioObjectPropertyElementMain,
+            };
+
+            var transportBuf = new uint[1];
+            uint transportSize = sizeof(uint);
+            var gch2 = GCHandle.Alloc(transportBuf, GCHandleType.Pinned);
+            try
+            {
+                if (AudioObjectGetPropertyData(deviceId, in transportAddr, 0, IntPtr.Zero, ref transportSize, gch2.AddrOfPinnedObject()) == 0)
+                {
+                    uint transportType = transportBuf[0];
+                    return transportType == kAudioDeviceTransportTypeBluetooth
+                        || transportType == kAudioDeviceTransportTypeBluetoothLE;
+                }
+            }
+            finally
+            {
+                gch2.Free();
+            }
+
+            return false;
+        }
+
+        return false;
     }
 
     /// <summary>

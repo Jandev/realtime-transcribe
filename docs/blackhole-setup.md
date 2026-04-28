@@ -9,6 +9,9 @@
 - [Create an Aggregate Input Device](#create-an-aggregate-input-device)
 - [Configure macOS Sound settings](#configure-macos-sound-settings)
 - [Select the recording device in the app](#select-the-recording-device-in-the-app)
+- [Bluetooth devices](#bluetooth-devices)
+  - [AirPods Pro and other Bluetooth headphones (audio quality)](#airpods-pro-and-other-bluetooth-headphones-audio-quality)
+  - [Capturing system audio through AirPods / Bluetooth output devices](#capturing-system-audio-through-airpods--bluetooth-output-devices)
 
 ---
 
@@ -76,4 +79,40 @@ The recording device can be selected inside the app on the **Devices** tab. Choo
 
 ## Bluetooth devices
 
-Avoid including Bluetooth devices inside an aggregate device — macOS removes them from the aggregate when they disconnect, which disrupts recording. Use Bluetooth devices as a standalone system input or route them through a multi-output device to BlackHole instead.
+### AirPods Pro and other Bluetooth headphones (audio quality)
+
+When a recording starts, macOS activates the audio session in *PlayAndRecord* mode.
+If the **AllowBluetooth** (Hands-Free Profile / HFP) option is also active, the OS
+downgrades Bluetooth output devices — including AirPods Pro — from the high-quality
+**A2DP** profile to the lower-quality **HFP/SCO** profile.  This is the "flat, phone-call
+quality" audio change you hear when recording begins.
+
+The app automatically avoids this downgrade: **AllowBluetooth (HFP) is only enabled when
+the selected input device is itself a Bluetooth microphone.**  If you record from a
+built-in microphone, a USB headset, or a virtual loopback device such as BlackHole, your
+AirPods Pro (and any other Bluetooth headphones) will remain on the high-quality A2DP
+profile throughout the recording.
+
+> **Tip:** If you *do* select AirPods Pro as the input microphone, the OS will activate
+> HFP — this is an OS-level requirement for bidirectional Bluetooth audio and cannot be
+> avoided.  For the best combined input and output quality, use the built-in microphone
+> (or an aggregate device with BlackHole) as the input and let AirPods stay on A2DP for
+> output.
+
+### Capturing system audio through AirPods / Bluetooth output devices
+
+Bluetooth devices — including AirPods Pro — cannot be used as a *loopback* input device.
+They receive audio from the Mac but have no way to feed that audio back as a recording
+input.  To capture system audio that plays through AirPods, you still need **BlackHole**:
+
+1. Create a **Multi-Output Device** in Audio MIDI Setup with both **BlackHole 2ch** and
+   **AirPods Pro** checked (see [Create a Multi-Output Device](#create-a-multi-output-device)).
+2. Set macOS **Sound → Output** to that Multi-Output Device.
+3. Create an **Aggregate Input Device** that combines BlackHole 2ch with your microphone
+   (see [Create an Aggregate Input Device](#create-an-aggregate-input-device)).
+4. Select that aggregate device as the input in the app's **Devices** tab.
+
+> **Important:** Do **not** include the AirPods themselves inside the aggregate input
+> device.  macOS removes Bluetooth devices from an aggregate when they disconnect, which
+> disrupts recording.  Route AirPods through the multi-output device for playback only,
+> and capture audio via BlackHole in the aggregate input device.
