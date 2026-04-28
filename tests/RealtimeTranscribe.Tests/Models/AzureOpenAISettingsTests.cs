@@ -85,4 +85,21 @@ public class AzureOpenAISettingsTests
         Assert.Equal("gpt-4o-mini", settings.ChatDeploymentName);
         Assert.False(string.IsNullOrEmpty(settings.ApiKey));
     }
+
+    [Fact]
+    public void DefaultSystemPrompt_IsEmpty()
+    {
+        var settings = new AzureOpenAISettings();
+
+        Assert.Equal(string.Empty, settings.SystemPrompt);
+    }
+
+    [Fact]
+    public void SystemPrompt_CanBeConfigured()
+    {
+        const string prompt = "We are a software development team. Common terms: git, PR, CI/CD.";
+        var settings = new AzureOpenAISettings { SystemPrompt = prompt };
+
+        Assert.Equal(prompt, settings.SystemPrompt);
+    }
 }

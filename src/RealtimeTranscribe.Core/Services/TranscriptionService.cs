@@ -73,7 +73,12 @@ public class TranscriptionService : ITranscriptionService
         var audioClient = client.GetAudioClient(_settings.WhisperDeploymentName);
 
         using var audioStream = new MemoryStream(wavBytes);
-        var result = await audioClient.TranscribeAudioAsync(audioStream, "audio.wav", cancellationToken: cancellationToken);
+
+        AudioTranscriptionOptions? options = null;
+        if (!string.IsNullOrWhiteSpace(_settings.SystemPrompt))
+            options = new AudioTranscriptionOptions { Prompt = _settings.SystemPrompt };
+
+        var result = await audioClient.TranscribeAudioAsync(audioStream, "audio.wav", options, cancellationToken: cancellationToken);
 
         return result.Value.Text;
     }
@@ -89,7 +94,7 @@ public class TranscriptionService : ITranscriptionService
 
         var messages = new List<ChatMessage>
         {
-            new SystemChatMessage(DiarizationSystemPrompt),
+            new SystemChatMessage(BuildSystemPrompt(DiarizationSystemPrompt)),
             new UserChatMessage($"Transcript:\n\n{transcript}")
         };
 
@@ -108,7 +113,7 @@ public class TranscriptionService : ITranscriptionService
 
         var messages = new List<ChatMessage>
         {
-            new SystemChatMessage(SummarisationSystemPrompt),
+            new SystemChatMessage(BuildSystemPrompt(SummarisationSystemPrompt)),
             new UserChatMessage($"Transcript:\n\n{transcript}")
         };
 
@@ -127,7 +132,7 @@ public class TranscriptionService : ITranscriptionService
 
         var messages = new List<ChatMessage>
         {
-            new SystemChatMessage(SummarisationSystemPrompt),
+            new SystemChatMessage(BuildSystemPrompt(SummarisationSystemPrompt)),
             new UserChatMessage($"Transcript:\n\n{transcript}")
         };
 
@@ -178,5 +183,18 @@ public class TranscriptionService : ITranscriptionService
         }
 
         return new AzureOpenAIClient(endpoint, credential);
+    }
+
+    /// <summary>
+    /// Builds a system prompt by combining the provided base prompt with the user-configured
+    /// <see cref="AzureOpenAISettings.SystemPrompt"/>. When <see cref="AzureOpenAISettings.SystemPrompt"/>
+    /// is empty the base prompt is returned unchanged.
+    /// </summary>
+    private string BuildSystemPrompt(string basePrompt)
+    {
+        if (string.IsNullOrWhiteSpace(_settings.SystemPrompt))
+            return basePrompt;
+
+        return basePrompt + "\n\n" + _settings.SystemPrompt;
     }
 }

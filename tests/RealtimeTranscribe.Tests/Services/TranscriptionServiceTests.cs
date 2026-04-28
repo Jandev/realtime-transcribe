@@ -150,5 +150,59 @@ public class TranscriptionServiceTests
 
         Assert.Equal(string.Empty, result);
     }
-}
 
+    [Fact]
+    public async Task TranscribeAsync_WithSystemPromptSet_StillReturnsEmptyForSmallInput()
+    {
+        // Guard clause must fire even when a system prompt is configured.
+        var service = new TranscriptionService(new AzureOpenAISettings
+        {
+            Endpoint = AiFoundryEndpoint,
+            ApiKey = "test-api-key",
+            WhisperDeploymentName = "whisper",
+            ChatDeploymentName = "gpt-4o-mini",
+            SystemPrompt = "We are a software development team. Common terms: git, PR, CI/CD."
+        });
+        var headerOnlyWav = new byte[44];
+
+        var result = await service.TranscribeAsync(headerOnlyWav);
+
+        Assert.Equal(string.Empty, result);
+    }
+
+    [Fact]
+    public async Task DiarizeAsync_WithSystemPromptSet_StillReturnsEmptyForBlankTranscript()
+    {
+        // Guard clause must fire even when a system prompt is configured.
+        var service = new TranscriptionService(new AzureOpenAISettings
+        {
+            Endpoint = AiFoundryEndpoint,
+            ApiKey = "test-api-key",
+            WhisperDeploymentName = "whisper",
+            ChatDeploymentName = "gpt-4o-mini",
+            SystemPrompt = "We are a software development team."
+        });
+
+        var result = await service.DiarizeAsync(string.Empty);
+
+        Assert.Equal(string.Empty, result);
+    }
+
+    [Fact]
+    public async Task SummarizeAsync_WithSystemPromptSet_StillReturnsEmptyForBlankTranscript()
+    {
+        // Guard clause must fire even when a system prompt is configured.
+        var service = new TranscriptionService(new AzureOpenAISettings
+        {
+            Endpoint = AiFoundryEndpoint,
+            ApiKey = "test-api-key",
+            WhisperDeploymentName = "whisper",
+            ChatDeploymentName = "gpt-4o-mini",
+            SystemPrompt = "We are a software development team."
+        });
+
+        var result = await service.SummarizeAsync(string.Empty);
+
+        Assert.Equal(string.Empty, result);
+    }
+}

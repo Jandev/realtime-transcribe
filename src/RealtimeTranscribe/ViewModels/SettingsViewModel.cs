@@ -31,6 +31,7 @@ public partial class SettingsViewModel : ObservableObject
         _whisperDeployment = Preferences.Default.Get(nameof(WhisperDeployment), _settings.WhisperDeploymentName);
         _chatDeployment = Preferences.Default.Get(nameof(ChatDeployment), _settings.ChatDeploymentName);
         _outputFolder = Preferences.Default.Get(nameof(OutputFolder), string.Empty);
+        _systemPrompt = Preferences.Default.Get(nameof(SystemPrompt), _settings.SystemPrompt);
     }
 
     [ObservableProperty]
@@ -47,6 +48,9 @@ public partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty]
     private string _outputFolder;
+
+    [ObservableProperty]
+    private string _systemPrompt;
 
     [ObservableProperty]
     private string _saveStatus = string.Empty;
@@ -67,12 +71,14 @@ public partial class SettingsViewModel : ObservableObject
         Preferences.Default.Set(nameof(WhisperDeployment), WhisperDeployment);
         Preferences.Default.Set(nameof(ChatDeployment), ChatDeployment);
         Preferences.Default.Set(nameof(OutputFolder), OutputFolder);
+        Preferences.Default.Set(nameof(SystemPrompt), SystemPrompt);
 
         // Update the shared settings object so the TranscriptionService picks up the new values
         _settings.Endpoint = Endpoint;
         _settings.ApiKey = ApiKey;
         _settings.WhisperDeploymentName = WhisperDeployment;
         _settings.ChatDeploymentName = ChatDeployment;
+        _settings.SystemPrompt = SystemPrompt;
 
         // Update the file storage service so it uses the new folder immediately
         _fileStorageService.OutputFolder = OutputFolder;
