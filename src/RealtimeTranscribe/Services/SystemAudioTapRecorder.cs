@@ -59,12 +59,27 @@ internal sealed class SystemAudioTapRecorder : IDisposable
     private bool _isFloatFormat;
     private bool _isInterleaved;
 
+    // Hot-path diagnostics. Updated with Interlocked from the IOProc and surfaced as a
+    // single Debug.WriteLine when GetChunk / StopAsync return an empty or fully-silent
+    // chunk. Lets us triage future "still silent" reports from a console log instead of
+    // by inference: callbacks==0 ⇒ aggregate device never ticked (clock/start issue);
+    // callbacks>0 && frames==0 ⇒ AudioBufferList walk is wrong (this bug);
+    // frames>0 && nonSilent==0 ⇒ output device truly silent / wrong process excluded.
+    private long _callbackCount;
+    private long _framesCaptured;
+    private long _nonSilentSampleCount;
+
     public bool IsRecording { get; private set; }
 
     public Task StartAsync()
     {
         if (IsRecording)
             return Task.CompletedTask;
+
+        // Reset per-session diagnostic counters.
+        Interlocked.Exchange(ref _callbackCount, 0);
+        Interlocked.Exchange(ref _framesCaptured, 0);
+        Interlocked.Exchange(ref _nonSilentSampleCount, 0);
 
         // ---- 1. Create the CATapDescription and the tap itself ---------------------
         // initStereoGlobalTapButExcludeProcesses: with our own pid in the exclude list
@@ -231,13 +246,20 @@ internal sealed class SystemAudioTapRecorder : IDisposable
             return Array.Empty<byte>();
 
         byte[] pcm;
+        long nonSilentSnapshot;
         lock (_lock)
         {
             pcm = _pcmBuffer.ToArray();
             // Replace the buffer rather than reset its position so the consumer's snapshot
             // is independent of any further IOProc writes that arrive after we exit the lock.
             _pcmBuffer = new MemoryStream();
+            nonSilentSnapshot = Interlocked.Read(ref _nonSilentSampleCount);
         }
+
+        // If a chunk comes back empty or fully silent, log diagnostics so we can tell
+        // a no-callbacks-fired regression apart from an actually-silent output device.
+        if (pcm.Length == 0 || nonSilentSnapshot == 0)
+            LogCaptureDiagnostics("GetChunk", pcm.Length);
 
         return pcm.Length == 0 ? Array.Empty<byte>() : WrapInWavContainer(pcm);
     }
@@ -258,6 +280,9 @@ internal sealed class SystemAudioTapRecorder : IDisposable
             pcm = _pcmBuffer.ToArray();
             _pcmBuffer = new MemoryStream();
         }
+
+        if (pcm.Length == 0 || Interlocked.Read(ref _nonSilentSampleCount) == 0)
+            LogCaptureDiagnostics("StopAsync", pcm.Length);
 
         DestroyAll();
 
@@ -297,16 +322,26 @@ internal sealed class SystemAudioTapRecorder : IDisposable
         if (inInputData == IntPtr.Zero)
             return 0;
 
+        Interlocked.Increment(ref _callbackCount);
+
         try
         {
             uint numberBuffers = (uint)Marshal.ReadInt32(inInputData);
             if (numberBuffers == 0)
                 return 0;
 
-            // AudioBufferList layout: { UInt32 mNumberBuffers; AudioBuffer mBuffers[1]; }
-            // AudioBuffer  layout:    { UInt32 mNumberChannels; UInt32 mDataByteSize; void* mData; }
-            // mBuffers starts at offset 4; each AudioBuffer is 8 + IntPtr.Size bytes.
-            int audioBufferSize = 8 + IntPtr.Size;
+            // CoreAudio's AudioBufferList layout (C):
+            //   struct AudioBufferList { UInt32 mNumberBuffers; AudioBuffer mBuffers[1]; }
+            //   struct AudioBuffer     { UInt32 mNumberChannels; UInt32 mDataByteSize; void *mData; }
+            //
+            // Because AudioBuffer contains a pointer (`void *mData`, 8-byte aligned on
+            // 64-bit macOS), the C compiler inserts 4 bytes of padding after
+            // mNumberBuffers so mBuffers starts at offset 8 — NOT 4. Likewise each
+            // AudioBuffer is 16 bytes (4 + 4 + 8), not 12. Walking with the wrong
+            // offsets reads the padding as mNumberChannels (=0), then computes a frame
+            // count of 0 and silently drops every callback ⇒ a perfectly silent WAV.
+            // See AudioBufferListMBuffersOffset / AudioBufferStructSize below.
+            int audioBufferStride = AudioBufferStructSize;
             int channels = (int)_channelsPerFrame;
             if (channels == 0)
                 channels = 1;
@@ -314,12 +349,19 @@ internal sealed class SystemAudioTapRecorder : IDisposable
             // Determine the frame count from the first buffer.
             // Interleaved: one buffer with mNumberChannels == channels, mDataByteSize == frames * channels * 4.
             // Planar:      `channels` buffers each with mNumberChannels == 1, mDataByteSize == frames * 4.
-            IntPtr firstBufferPtr = IntPtr.Add(inInputData, 4);
+            IntPtr firstBufferPtr = IntPtr.Add(inInputData, AudioBufferListMBuffersOffset);
             uint firstChannelsInBuffer = (uint)Marshal.ReadInt32(firstBufferPtr, 0);
             uint firstDataBytes        = (uint)Marshal.ReadInt32(firstBufferPtr, 4);
             int  bytesPerSample        = (int)(_bitsPerChannel / 8);
             if (bytesPerSample == 0)
-                bytesPerSample = 4; // sane fallback for Float32
+            {
+                // Sane Float32 fallback. We must keep the format flags coherent so that
+                // ReadSampleAsInt16 takes the Float32 branch instead of its
+                // "Unsupported format — emit silence" path.
+                bytesPerSample  = 4;
+                _bitsPerChannel = 32;
+                _isFloatFormat  = true;
+            }
 
             int firstChannelStride = (int)Math.Max(1u, firstChannelsInBuffer);
             int frameCount = (int)(firstDataBytes / (uint)(firstChannelStride * bytesPerSample));
@@ -349,13 +391,22 @@ internal sealed class SystemAudioTapRecorder : IDisposable
                 IntPtr[] planePtrs = new IntPtr[planes];
                 for (int p = 0; p < planes; p++)
                 {
-                    IntPtr buf = IntPtr.Add(inInputData, 4 + p * audioBufferSize);
+                    IntPtr buf = IntPtr.Add(inInputData, AudioBufferListMBuffersOffset + p * audioBufferStride);
                     planePtrs[p] = Marshal.ReadIntPtr(buf, 8);
                     if (planePtrs[p] == IntPtr.Zero)
                         return 0;
                 }
                 ConvertPlanarToInt16(planePtrs, frameCount, channels, outSpan);
             }
+
+            // Cheap signal-presence counter: scan the produced Int16 samples for any
+            // value above a small threshold (~ -60 dBFS). Avoids classifying numerical
+            // dither / DC offset as audio. Runs on the RT thread but is just an
+            // increment per frame so it's negligible.
+            int nonSilentInChunk = CountNonSilentSamples(outSpan);
+            Interlocked.Add(ref _framesCaptured, frameCount);
+            if (nonSilentInChunk > 0)
+                Interlocked.Add(ref _nonSilentSampleCount, nonSilentInChunk);
 
             lock (_lock)
             {
@@ -428,6 +479,43 @@ internal sealed class SystemAudioTapRecorder : IDisposable
         }
         // Unsupported format — emit silence rather than corrupt audio.
         return 0;
+    }
+
+    /// <summary>
+    /// Counts samples in a 16-bit PCM span whose absolute value exceeds a small
+    /// threshold (~ -60 dBFS). Used purely as a hot-path diagnostic so we can tell
+    /// "captured audio is genuinely silent" from "captured nothing" without paying
+    /// the cost of summing every sample.
+    /// </summary>
+    private static int CountNonSilentSamples(ReadOnlySpan<byte> pcm16)
+    {
+        const short SilenceThreshold = 32; // ~ -60 dBFS in Int16
+        int count = 0;
+        for (int i = 0; i + 1 < pcm16.Length; i += 2)
+        {
+            short s = BinaryPrimitives.ReadInt16LittleEndian(pcm16.Slice(i, 2));
+            if (s > SilenceThreshold || s < -SilenceThreshold)
+                count++;
+        }
+        return count;
+    }
+
+    /// <summary>
+    /// Emits a single Debug log line summarising the IOProc activity since the last
+    /// call. Logged when a returned chunk is empty or fully silent so future "no
+    /// transcript" reports can be triaged without another round-trip with the user.
+    /// </summary>
+    private void LogCaptureDiagnostics(string trigger, int chunkBytes)
+    {
+        long callbacks = Interlocked.Read(ref _callbackCount);
+        long frames    = Interlocked.Read(ref _framesCaptured);
+        long nonSilent = Interlocked.Read(ref _nonSilentSampleCount);
+        Debug.WriteLine(
+            $"[SystemAudioTapRecorder] {trigger}: chunkBytes={chunkBytes} " +
+            $"callbacks={callbacks} frames={frames} nonSilentSamples={nonSilent} " +
+            $"format={(_isFloatFormat ? "Float" : "Int")}{_bitsPerChannel} " +
+            $"sampleRate={_sampleRate} channels={_channelsPerFrame} " +
+            $"interleaved={_isInterleaved}");
     }
 
     /// <summary>
@@ -572,6 +660,26 @@ internal sealed class SystemAudioTapRecorder : IDisposable
     // exact ASCII strings used here ("uid", "name", "private", "stacked", "taps", "drift").
     // FourCC selectors are encoded big-endian to match CoreAudio's convention.
     // ---------------------------------------------------------------------
+    // ---------------------------------------------------------------------
+    // CoreAudio AudioBufferList struct layout (64-bit macOS).
+    //
+    //   struct AudioBufferList { UInt32 mNumberBuffers; AudioBuffer mBuffers[1]; }
+    //   struct AudioBuffer     { UInt32 mNumberChannels; UInt32 mDataByteSize; void *mData; }
+    //
+    // Because AudioBuffer contains an 8-byte-aligned pointer (`void *mData`) on
+    // 64-bit, the C compiler:
+    //   • Inserts 4 bytes of padding after mNumberBuffers, so
+    //     offsetof(AudioBufferList, mBuffers) == 8 (NOT 4).
+    //   • Pads each AudioBuffer to 16 bytes (4 + 4 + 8), NOT 12.
+    //
+    // Walking with the wrong offsets reads padding-as-mNumberChannels (=0) and the
+    // real mNumberChannels-as-mDataByteSize (=2), then computes a frame count of 0
+    // and silently drops every callback — which is the "recording succeeds but
+    // every chunk is silent" symptom we hit before this fix.
+    // ---------------------------------------------------------------------
+    private const int AudioBufferListMBuffersOffset = 8;
+    private static readonly int AudioBufferStructSize = 8 + IntPtr.Size; // = 16 on 64-bit
+
     private const string kAudioAggregateDeviceUIDKey       = "uid";
     private const string kAudioAggregateDeviceNameKey      = "name";
     private const string kAudioAggregateDeviceIsPrivateKey = "private";
