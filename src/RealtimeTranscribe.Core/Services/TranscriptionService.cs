@@ -75,8 +75,9 @@ public class TranscriptionService : ITranscriptionService
         using var audioStream = new MemoryStream(wavBytes);
 
         AudioTranscriptionOptions? options = null;
-        if (!string.IsNullOrWhiteSpace(_settings.SystemPrompt))
-            options = new AudioTranscriptionOptions { Prompt = _settings.SystemPrompt };
+        var prompt = await ReadSystemPromptFileAsync(cancellationToken);
+        if (!string.IsNullOrWhiteSpace(prompt))
+            options = new AudioTranscriptionOptions { Prompt = prompt };
 
         var result = await audioClient.TranscribeAudioAsync(audioStream, "audio.wav", options, cancellationToken: cancellationToken);
 
@@ -94,7 +95,7 @@ public class TranscriptionService : ITranscriptionService
 
         var messages = new List<ChatMessage>
         {
-            new SystemChatMessage(BuildSystemPrompt(DiarizationSystemPrompt)),
+            new SystemChatMessage(await BuildSystemPromptAsync(DiarizationSystemPrompt, cancellationToken)),
             new UserChatMessage($"Transcript:\n\n{transcript}")
         };
 
@@ -113,7 +114,7 @@ public class TranscriptionService : ITranscriptionService
 
         var messages = new List<ChatMessage>
         {
-            new SystemChatMessage(BuildSystemPrompt(SummarisationSystemPrompt)),
+            new SystemChatMessage(await BuildSystemPromptAsync(SummarisationSystemPrompt, cancellationToken)),
             new UserChatMessage($"Transcript:\n\n{transcript}")
         };
 
@@ -132,7 +133,7 @@ public class TranscriptionService : ITranscriptionService
 
         var messages = new List<ChatMessage>
         {
-            new SystemChatMessage(BuildSystemPrompt(SummarisationSystemPrompt)),
+            new SystemChatMessage(await BuildSystemPromptAsync(SummarisationSystemPrompt, cancellationToken)),
             new UserChatMessage($"Transcript:\n\n{transcript}")
         };
 
@@ -186,15 +187,36 @@ public class TranscriptionService : ITranscriptionService
     }
 
     /// <summary>
-    /// Builds a system prompt by combining the provided base prompt with the user-configured
-    /// <see cref="AzureOpenAISettings.SystemPrompt"/>. When <see cref="AzureOpenAISettings.SystemPrompt"/>
-    /// is empty the base prompt is returned unchanged.
+    /// Reads the system prompt from <see cref="AzureOpenAISettings.SystemPromptFilePath"/> and
+    /// prepends it to <paramref name="basePrompt"/>. Returns <paramref name="basePrompt"/>
+    /// unchanged when no file path is configured or the file cannot be read.
     /// </summary>
-    private string BuildSystemPrompt(string basePrompt)
+    private async Task<string> BuildSystemPromptAsync(string basePrompt, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(_settings.SystemPrompt))
+        var userContext = await ReadSystemPromptFileAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(userContext))
             return basePrompt;
 
-        return basePrompt + "\n\n" + _settings.SystemPrompt;
+        return basePrompt + "\n\n" + userContext.Trim();
+    }
+
+    /// <summary>
+    /// Reads the content of <see cref="AzureOpenAISettings.SystemPromptFilePath"/>.
+    /// Returns an empty string when no path is configured or the file cannot be read.
+    /// </summary>
+    private async Task<string> ReadSystemPromptFileAsync(CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_settings.SystemPromptFilePath))
+            return string.Empty;
+
+        try
+        {
+            return await File.ReadAllTextAsync(_settings.SystemPromptFilePath, cancellationToken);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // File is missing, locked, or inaccessible — proceed without context.
+            return string.Empty;
+        }
     }
 }

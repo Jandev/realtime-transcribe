@@ -87,19 +87,19 @@ public class AzureOpenAISettingsTests
     }
 
     [Fact]
-    public void DefaultSystemPrompt_IsEmpty()
+    public void DefaultSystemPromptFilePath_IsEmpty()
     {
         var settings = new AzureOpenAISettings();
 
-        Assert.Equal(string.Empty, settings.SystemPrompt);
+        Assert.Equal(string.Empty, settings.SystemPromptFilePath);
     }
 
     [Fact]
-    public void SystemPrompt_CanBeConfigured()
+    public void SystemPromptFilePath_CanBeConfigured()
     {
-        const string prompt = "We are a software development team. Common terms: git, PR, CI/CD.";
-        var settings = new AzureOpenAISettings { SystemPrompt = prompt };
+        const string path = "/Users/me/prompts/context.md";
+        var settings = new AzureOpenAISettings { SystemPromptFilePath = path };
 
-        Assert.Equal(prompt, settings.SystemPrompt);
+        Assert.Equal(path, settings.SystemPromptFilePath);
     }
 }

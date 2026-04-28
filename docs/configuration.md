@@ -27,7 +27,7 @@ Edit `src/RealtimeTranscribe/appsettings.json` before building:
     "ApiKey": "<your-api-key>",
     "WhisperDeploymentName": "whisper",
     "ChatDeploymentName": "gpt-4o-mini",
-    "SystemPrompt": "We are a software development team. Common terms: git, PR, CI/CD, Azure."
+    "SystemPromptFilePath": "/Users/you/prompts/my-context.md"
   }
 }
 ```
@@ -46,7 +46,7 @@ dotnet user-secrets set "AzureOpenAI:Endpoint" "https://<your-resource>.openai.a
 dotnet user-secrets set "AzureOpenAI:ApiKey" "<your-api-key>"
 dotnet user-secrets set "AzureOpenAI:WhisperDeploymentName" "whisper"
 dotnet user-secrets set "AzureOpenAI:ChatDeploymentName" "gpt-4o-mini"
-dotnet user-secrets set "AzureOpenAI:SystemPrompt" "We are a software development team. Common terms: git, PR, CI/CD, Azure."
+dotnet user-secrets set "AzureOpenAI:SystemPromptFilePath" "/Users/you/prompts/my-context.md"
 ```
 
 ---
@@ -73,6 +73,6 @@ Make sure the account has the **Cognitive Services User** role (or **Azure AI De
 | `AzureOpenAI:ApiKey` | *(empty)* | API key; leave blank for DefaultAzureCredential |
 | `AzureOpenAI:WhisperDeploymentName` | `whisper` | Name of the Whisper model deployment |
 | `AzureOpenAI:ChatDeploymentName` | `gpt-4o-mini` | Name of the chat model deployment |
-| `AzureOpenAI:SystemPrompt` | *(empty)* | Optional domain context forwarded to Whisper as a hint and prepended to chat system prompts; use this to list domain-specific vocabulary, meeting type, or other context |
+| `AzureOpenAI:SystemPromptFilePath` | *(empty)* | Path to a Markdown file containing domain context (vocabulary, meeting type, etc.). The file is read on every transcription call so edits are picked up without restarting. |
 
 Settings configured via the Settings UI (Option A) take precedence over `appsettings.json` values at runtime.

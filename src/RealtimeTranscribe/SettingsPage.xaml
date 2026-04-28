@@ -118,14 +118,19 @@
                         <VerticalStackLayout Spacing="4">
                             <Label
                                 FontSize="13"
-                                Text="System Prompt"
+                                Text="System Prompt File"
                                 TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray500}}" />
-                            <Editor
-                                AutoSize="TextChanges"
-                                MinimumHeightRequest="80"
-                                Placeholder="E.g. We are a software development team. Common terms: git, PR, CI/CD, Azure."
-                                FontSize="15"
-                                Text="{Binding SystemPrompt}" />
+                            <HorizontalStackLayout Spacing="8">
+                                <Entry
+                                    HorizontalOptions="FillAndExpand"
+                                    IsReadOnly="True"
+                                    Placeholder="No file selected"
+                                    FontSize="15"
+                                    Text="{Binding SystemPromptFilePath}" />
+                                <Button
+                                    Command="{Binding BrowseSystemPromptFileCommand}"
+                                    Text="Browse…" />
+                            </HorizontalStackLayout>
                         </VerticalStackLayout>
                     </Grid>
                 </VerticalStackLayout>
@@ -134,7 +139,7 @@
             <Label
                 FontSize="13"
                 Margin="4,0,0,24"
-                Text="Providing domain-specific context improves transcription accuracy and summary quality."
+                Text="Point to a Markdown file that describes your domain vocabulary and meeting context. The file is re-read on every transcription, so edits are picked up without restarting."
                 TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray500}}" />
 
             <Label

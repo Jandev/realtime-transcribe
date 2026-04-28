@@ -152,16 +152,18 @@ public class TranscriptionServiceTests
     }
 
     [Fact]
-    public async Task TranscribeAsync_WithSystemPromptSet_StillReturnsEmptyForSmallInput()
+    public async Task TranscribeAsync_WithSystemPromptFilePathSet_StillReturnsEmptyForSmallInput()
     {
-        // Guard clause must fire even when a system prompt is configured.
+        // Guard clause must fire even when a system prompt file path is configured.
+        // The file does not exist, so reading it will silently return empty — but the
+        // size guard must still fire before any network call is attempted.
         var service = new TranscriptionService(new AzureOpenAISettings
         {
             Endpoint = AiFoundryEndpoint,
             ApiKey = "test-api-key",
             WhisperDeploymentName = "whisper",
             ChatDeploymentName = "gpt-4o-mini",
-            SystemPrompt = "We are a software development team. Common terms: git, PR, CI/CD."
+            SystemPromptFilePath = "/nonexistent/context.md"
         });
         var headerOnlyWav = new byte[44];
 
@@ -171,16 +173,16 @@ public class TranscriptionServiceTests
     }
 
     [Fact]
-    public async Task DiarizeAsync_WithSystemPromptSet_StillReturnsEmptyForBlankTranscript()
+    public async Task DiarizeAsync_WithSystemPromptFilePathSet_StillReturnsEmptyForBlankTranscript()
     {
-        // Guard clause must fire even when a system prompt is configured.
+        // Guard clause must fire even when a system prompt file path is configured.
         var service = new TranscriptionService(new AzureOpenAISettings
         {
             Endpoint = AiFoundryEndpoint,
             ApiKey = "test-api-key",
             WhisperDeploymentName = "whisper",
             ChatDeploymentName = "gpt-4o-mini",
-            SystemPrompt = "We are a software development team."
+            SystemPromptFilePath = "/nonexistent/context.md"
         });
 
         var result = await service.DiarizeAsync(string.Empty);
@@ -189,16 +191,16 @@ public class TranscriptionServiceTests
     }
 
     [Fact]
-    public async Task SummarizeAsync_WithSystemPromptSet_StillReturnsEmptyForBlankTranscript()
+    public async Task SummarizeAsync_WithSystemPromptFilePathSet_StillReturnsEmptyForBlankTranscript()
     {
-        // Guard clause must fire even when a system prompt is configured.
+        // Guard clause must fire even when a system prompt file path is configured.
         var service = new TranscriptionService(new AzureOpenAISettings
         {
             Endpoint = AiFoundryEndpoint,
             ApiKey = "test-api-key",
             WhisperDeploymentName = "whisper",
             ChatDeploymentName = "gpt-4o-mini",
-            SystemPrompt = "We are a software development team."
+            SystemPromptFilePath = "/nonexistent/context.md"
         });
 
         var result = await service.SummarizeAsync(string.Empty);
