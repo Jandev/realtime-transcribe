@@ -30,13 +30,19 @@ public partial class SelectableAudioDevice : ObservableObject
 
 /// <summary>
 /// ViewModel for <see cref="DevicesPage"/>.
-/// Exposes the lists of available input and output devices, the currently selected device
-/// in each list, and commands to change the selection.
+/// Exposes the list of available input devices and the currently selected device,
+/// and the command to change the selection.
 /// <para>
-/// When the user selects a different input or output device, <see cref="IAudioService.SetSelectedInputDevice"/>
-/// / <see cref="IAudioService.SetSelectedOutputDevice"/> is called, which raises
-/// <see cref="IAudioService.DeviceSelectionChanged"/> so that <c>MainViewModel</c> can
-/// stop and restart any in-progress recording on the newly-selected device.
+/// When the user selects a different input device, <see cref="IAudioService.SetSelectedInputDevice"/>
+/// is called, which raises <see cref="IAudioService.DeviceSelectionChanged"/> so that
+/// <c>MainViewModel</c> can stop and restart any in-progress recording on the newly-selected
+/// device.
+/// </para>
+/// <para>
+/// There is intentionally no Output device picker.  Selecting an output device has no effect
+/// on what gets recorded — recording always reads from the input device.  To capture audio
+/// playing through an output device (e.g. AirPods), select the synthetic
+/// "System Audio (all apps)" entry that appears at the top of the input list on macOS 14.2+.
 /// </para>
 /// </summary>
 public partial class DevicesViewModel : ObservableObject
@@ -45,9 +51,6 @@ public partial class DevicesViewModel : ObservableObject
 
     [ObservableProperty]
     private ObservableCollection<SelectableAudioDevice> _inputDevices = [];
-
-    [ObservableProperty]
-    private ObservableCollection<SelectableAudioDevice> _outputDevices = [];
 
     [ObservableProperty]
     private string _statusMessage = string.Empty;
@@ -60,7 +63,7 @@ public partial class DevicesViewModel : ObservableObject
 
     /// <summary>
     /// Requests microphone permission (shows the OS dialog the first time) and then
-    /// refreshes both device lists from the platform audio session.
+    /// refreshes the input device list from the platform audio session.
     /// Called automatically when the page appears and when the user taps "Refresh".
     /// </summary>
     [RelayCommand]
@@ -97,27 +100,10 @@ public partial class DevicesViewModel : ObservableObject
         StatusMessage = $"Input: {device.Device.Name}";
     }
 
-    /// <summary>Selects <paramref name="device"/> as the active output device.</summary>
-    [RelayCommand]
-    private void SelectOutputDevice(SelectableAudioDevice device)
-    {
-        if (device.IsSelected)
-            return;
-
-        foreach (var item in OutputDevices)
-            item.IsSelected = item.Device.Id == device.Device.Id;
-
-        _audioService.SetSelectedOutputDevice(device.Device.Id);
-        StatusMessage = $"Output: {device.Device.Name}";
-    }
-
     private void LoadDevices()
     {
         InputDevices = new ObservableCollection<SelectableAudioDevice>(
             BuildSelectableList(_audioService.GetInputDevices(), _audioService.SelectedInputDeviceId));
-
-        OutputDevices = new ObservableCollection<SelectableAudioDevice>(
-            BuildSelectableList(_audioService.GetOutputDevices(), _audioService.SelectedOutputDeviceId));
 
         StatusMessage = string.Empty;
     }

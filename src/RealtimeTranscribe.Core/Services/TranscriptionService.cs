@@ -69,6 +69,15 @@ public class TranscriptionService : ITranscriptionService
         if (wavBytes.Length <= MinAudioDataBytes)
             return string.Empty;
 
+        // Silence pre-check.  Whisper is notorious for hallucinating phrases like
+        // "Thank you for watching.", "ご視聴ありがとうございました", or repeating Japanese
+        // cooking verbs ("混ぜる 混ぜる 混ぜる…") when fed silence or near-silence — which
+        // happens routinely with the system-audio tap when nothing is playing.  Skipping
+        // those payloads here both eliminates the hallucinated transcript lines and saves
+        // API quota.
+        if (AudioSilenceDetector.IsSilent(wavBytes))
+            return string.Empty;
+
         var client = BuildAzureClient();
         var audioClient = client.GetAudioClient(_settings.WhisperDeploymentName);
 
@@ -81,7 +90,12 @@ public class TranscriptionService : ITranscriptionService
 
         var result = await audioClient.TranscribeAudioAsync(audioStream, "audio.wav", options, cancellationToken: cancellationToken);
 
-        return result.Value.Text;
+        // Belt-and-braces hallucination filter.  Even with the silence pre-check above, a
+        // chunk that contains only a few hundred milliseconds of real audio (e.g. a UI
+        // sound) still occasionally provokes a hallucinated transcript.  Strip the
+        // well-known phrases; if nothing meaningful remains, return empty so the
+        // scheduler doesn't append it to the transcript.
+        return WhisperHallucinationFilter.Filter(result.Value.Text);
     }
 
     /// <inheritdoc/>

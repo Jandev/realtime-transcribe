@@ -27,13 +27,19 @@ namespace RealtimeTranscribe.Services;
 public sealed class AudioService : IAudioService, IDisposable
 {
     private const string InputDevicePreferenceKey = "SelectedInputDeviceId";
-    private const string OutputDevicePreferenceKey = "SelectedOutputDeviceId";
 
     private readonly IAudioManager _audioManager;
     private IAudioRecorder? _recorder;
 
+#if MACCATALYST
+    // Active when the user has selected the synthetic "System Audio (all apps)" entry.
+    // Captures the system audio mix via the CoreAudio Process Tap API, bypassing the
+    // physical-input recorder entirely.  Mutually exclusive with _recorder — exactly
+    // one of the two is non-null while a session is active.
+    private SystemAudioTapRecorder? _systemAudioRecorder;
+#endif
+
     private string? _selectedInputDeviceId;
-    private string? _selectedOutputDeviceId;
 
 #if MACCATALYST || IOS
     private IDisposable? _routeChangeToken;
@@ -46,17 +52,24 @@ public sealed class AudioService : IAudioService, IDisposable
     {
         _audioManager = audioManager;
 
-        // Restore persisted device selections.
+        // Restore persisted device selection.
         var savedInput = Preferences.Default.Get(InputDevicePreferenceKey, string.Empty);
         _selectedInputDeviceId = string.IsNullOrEmpty(savedInput) ? null : savedInput;
-
-        var savedOutput = Preferences.Default.Get(OutputDevicePreferenceKey, string.Empty);
-        _selectedOutputDeviceId = string.IsNullOrEmpty(savedOutput) ? null : savedOutput;
 
         SubscribeToAudioRouteChanges();
     }
 
-    public bool IsRecording => _recorder?.IsRecording ?? false;
+    public bool IsRecording
+    {
+        get
+        {
+#if MACCATALYST
+            if (_systemAudioRecorder is { IsRecording: true })
+                return true;
+#endif
+            return _recorder?.IsRecording ?? false;
+        }
+    }
 
     // ------------------------------------------------------------------
     // Device enumeration
@@ -80,7 +93,7 @@ public sealed class AudioService : IAudioService, IDisposable
         // BlackHole.  The HAL is the authoritative source for ALL devices.
         var coreAudioDevices = GetCoreAudioDevices(inputScope: true);
         if (coreAudioDevices.Count > 0)
-            return coreAudioDevices;
+            return PrependSystemAudioEntry(coreAudioDevices);
 
         // Fallback: the CoreAudio HAL can return nothing immediately after the user grants
         // microphone permission via the TCC dialog (the new grant has not yet propagated into
@@ -89,9 +102,10 @@ public sealed class AudioService : IAudioService, IDisposable
         // built-in microphone even when the HAL query returns zero results.
         var availableInputs = session.AvailableInputs;
         if (availableInputs is { Length: > 0 })
-            return availableInputs.Select(p => new AudioDevice($"{p.PortType}:{p.PortName}", p.PortName)).ToArray();
+            return PrependSystemAudioEntry(
+                availableInputs.Select(p => new AudioDevice($"{p.PortType}:{p.PortName}", p.PortName)).ToArray());
 
-        return Array.Empty<AudioDevice>();
+        return PrependSystemAudioEntry(Array.Empty<AudioDevice>());
 #elif IOS
         // Set the session category to PlayAndRecord so that AVAudioSession exposes the
         // full set of available input ports: built-in mic, aggregated/virtual devices,
@@ -109,37 +123,35 @@ public sealed class AudioService : IAudioService, IDisposable
         return Array.Empty<AudioDevice>();
     }
 
-    public IReadOnlyList<AudioDevice> GetOutputDevices()
-    {
 #if MACCATALYST
-        return GetCoreAudioDevices(inputScope: false);
-#elif IOS
-        var session = AVAudioSession.SharedInstance();
-        var outputs = session.CurrentRoute?.Outputs;
-        if (outputs is { Length: > 0 })
-            return outputs.Select(p => new AudioDevice($"{p.PortType}:{p.PortName}", p.PortName)).ToArray();
-#endif
-        return Array.Empty<AudioDevice>();
+    /// <summary>
+    /// Prepends the synthetic "System Audio (all apps)" entry to the input device list.
+    /// Selecting it routes recording through <see cref="SystemAudioTapRecorder"/> (CoreAudio
+    /// Process Tap) instead of a physical microphone, so the captured audio is exactly
+    /// what the user hears — regardless of which output device (AirPods etc.) is in use.
+    /// </summary>
+    private static IReadOnlyList<AudioDevice> PrependSystemAudioEntry(IReadOnlyList<AudioDevice> physicalDevices)
+    {
+        var systemAudio = new AudioDevice(IAudioService.SystemAudioDeviceId, "System Audio (all apps)");
+        if (physicalDevices.Count == 0)
+            return new[] { systemAudio };
+
+        var combined = new List<AudioDevice>(physicalDevices.Count + 1) { systemAudio };
+        combined.AddRange(physicalDevices);
+        return combined;
     }
+#endif
 
     // ------------------------------------------------------------------
     // Device selection
     // ------------------------------------------------------------------
 
     public string? SelectedInputDeviceId => _selectedInputDeviceId;
-    public string? SelectedOutputDeviceId => _selectedOutputDeviceId;
 
     public void SetSelectedInputDevice(string? deviceId)
     {
         _selectedInputDeviceId = deviceId;
         Preferences.Default.Set(InputDevicePreferenceKey, deviceId ?? string.Empty);
-        DeviceSelectionChanged?.Invoke(this, EventArgs.Empty);
-    }
-
-    public void SetSelectedOutputDevice(string? deviceId)
-    {
-        _selectedOutputDeviceId = deviceId;
-        Preferences.Default.Set(OutputDevicePreferenceKey, deviceId ?? string.Empty);
         DeviceSelectionChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -149,6 +161,16 @@ public sealed class AudioService : IAudioService, IDisposable
 
     public async Task StartRecordingAsync()
     {
+#if MACCATALYST
+        if (_selectedInputDeviceId == IAudioService.SystemAudioDeviceId)
+        {
+            // Capture the system audio mix via the CoreAudio Process Tap pipeline.
+            _systemAudioRecorder?.Dispose();
+            _systemAudioRecorder = new SystemAudioTapRecorder();
+            await _systemAudioRecorder.StartAsync();
+            return;
+        }
+#endif
         ApplyPreferredInputDevice();
         _recorder = _audioManager.CreateRecorder();
         await _recorder.StartAsync();
@@ -156,6 +178,25 @@ public sealed class AudioService : IAudioService, IDisposable
 
     public async Task<byte[]> StopRecordingAsync()
     {
+#if MACCATALYST
+        if (_systemAudioRecorder is not null)
+        {
+            try
+            {
+                return await _systemAudioRecorder.StopAsync();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[AudioService] System-audio StopAsync failed: {ex}");
+                return Array.Empty<byte>();
+            }
+            finally
+            {
+                _systemAudioRecorder.Dispose();
+                _systemAudioRecorder = null;
+            }
+        }
+#endif
         if (_recorder is null)
             return Array.Empty<byte>();
 
@@ -181,6 +222,15 @@ public sealed class AudioService : IAudioService, IDisposable
 
     public async Task<byte[]> GetCurrentChunkAsync()
     {
+#if MACCATALYST
+        if (_systemAudioRecorder is { IsRecording: true })
+        {
+            // Snapshot the buffer without tearing down the tap — much cheaper than
+            // re-creating the Process Tap + aggregate device for every chunk, and the
+            // continuous capture means no inter-chunk audio is lost.
+            return _systemAudioRecorder.GetChunk();
+        }
+#endif
         if (_recorder is null || !_recorder.IsRecording)
             return Array.Empty<byte>();
 
@@ -227,6 +277,15 @@ public sealed class AudioService : IAudioService, IDisposable
     /// Plugin.Maui.Audio) picks it up on the next recording start.
     /// </para>
     /// <para>
+    /// On both MacCatalyst and iOS, the <c>AVAudioSession</c> is reconfigured immediately
+    /// before recording.  <c>AllowBluetooth</c> (Hands-Free Profile / HFP) is only
+    /// activated when the chosen input device is itself a Bluetooth microphone.  Omitting
+    /// <c>AllowBluetooth</c> when a non-Bluetooth input is selected prevents the OS from
+    /// downgrading Bluetooth output devices (e.g. AirPods Pro) from the high-quality A2DP
+    /// profile to the low-quality HFP / SCO profile — the "phone-call" audio quality
+    /// change users notice when recording starts.
+    /// </para>
+    /// <para>
     /// On iOS, the standard <c>AVAudioSession.setPreferredInput</c> path is used.
     /// </para>
     /// </summary>
@@ -235,6 +294,24 @@ public sealed class AudioService : IAudioService, IDisposable
 #if MACCATALYST
         if (_selectedInputDeviceId is null)
             return;
+
+        // The synthetic "System Audio" entry is handled by SystemAudioTapRecorder, not
+        // by AVAudioRecorder — there is no physical input port to apply.
+        if (_selectedInputDeviceId == IAudioService.SystemAudioDeviceId)
+            return;
+
+        // Re-configure the session so that a non-Bluetooth input selection does not force
+        // Bluetooth output devices (AirPods, etc.) into the lower-quality HFP/SCO mode.
+        // Note: the SystemAudioDeviceId guard above guarantees _selectedInputDeviceId is
+        // a real CoreAudio device UID at this point, so passing it to
+        // IsCoreAudioDeviceBluetooth / SetCoreAudioDefaultInputDevice is safe.
+        bool inputIsBluetooth = IsCoreAudioDeviceBluetooth(_selectedInputDeviceId);
+        var session = AVAudioSession.SharedInstance();
+        var opts = inputIsBluetooth
+            ? AVAudioSessionCategoryOptions.AllowBluetooth | AVAudioSessionCategoryOptions.AllowBluetoothA2DP
+            : AVAudioSessionCategoryOptions.AllowBluetoothA2DP;
+        session.SetCategory(AVAudioSessionCategory.PlayAndRecord, opts, out _);
+        session.SetActive(true, out _);
 
         SetCoreAudioDefaultInputDevice(_selectedInputDeviceId);
 #elif IOS
@@ -246,7 +323,18 @@ public sealed class AudioService : IAudioService, IDisposable
             .FirstOrDefault(p => $"{p.PortType}:{p.PortName}" == _selectedInputDeviceId);
 
         if (preferred is not null)
+        {
+            // Only enable Bluetooth HFP routing if the selected input device requires it.
+            // Using AllowBluetooth with a non-HFP input switches Bluetooth output devices
+            // (e.g. AirPods Pro) from A2DP (high quality) to HFP/SCO (phone-call quality).
+            bool inputIsBluetoothHfp =
+                string.Equals(preferred.PortType.ToString(), "BluetoothHFP", StringComparison.Ordinal);
+            var opts = inputIsBluetoothHfp
+                ? AVAudioSessionCategoryOptions.AllowBluetooth | AVAudioSessionCategoryOptions.AllowBluetoothA2DP
+                : AVAudioSessionCategoryOptions.AllowBluetoothA2DP;
+            session.SetCategory(AVAudioSessionCategory.PlayAndRecord, opts, out _);
             session.SetPreferredInput(preferred, out _);
+        }
 #endif
     }
 
@@ -255,6 +343,10 @@ public sealed class AudioService : IAudioService, IDisposable
 #if MACCATALYST || IOS
         _routeChangeToken?.Dispose();
         _routeChangeToken = null;
+#endif
+#if MACCATALYST
+        _systemAudioRecorder?.Dispose();
+        _systemAudioRecorder = null;
 #endif
         GC.SuppressFinalize(this);
     }
@@ -287,10 +379,13 @@ public sealed class AudioService : IAudioService, IDisposable
     private const uint kAudioDevicePropertyStreams          = 0x73746D23u; // 'stm#'
     private const uint kAudioObjectPropertyName            = 0x6C6E616Du; // 'lnam'
     private const uint kAudioDevicePropertyDeviceUID       = 0x75696420u; // 'uid '
+    private const uint kAudioDevicePropertyTransportType   = 0x7472616Eu; // 'tran'
     private const uint kAudioObjectPropertyScopeGlobal     = 0x676C6F62u; // 'glob'
     private const uint kAudioDevicePropertyScopeInput      = 0x696E7074u; // 'inpt'
     private const uint kAudioDevicePropertyScopeOutput     = 0x6F757470u; // 'outp'
     private const uint kAudioObjectPropertyElementMain     = 0;
+    private const uint kAudioDeviceTransportTypeBluetooth  = 0x626C7565u; // 'blue'
+    private const uint kAudioDeviceTransportTypeBluetoothLE = 0x626C6165u; // 'blae'
 
     [DllImport("/System/Library/Frameworks/CoreAudio.framework/CoreAudio")]
     private static extern int AudioObjectGetPropertyDataSize(
@@ -442,6 +537,77 @@ public sealed class AudioService : IAudioService, IDisposable
         }
 
         System.Diagnostics.Debug.WriteLine($"[AudioService] SetCoreAudioDefaultInputDevice: device UID '{uid}' not found.");
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when the CoreAudio device identified by
+    /// <paramref name="uid"/> has a Bluetooth or Bluetooth LE transport type.
+    /// Used to decide whether <c>AllowBluetooth</c> (HFP) must be enabled in the
+    /// <c>AVAudioSession</c> before recording — omitting it when unnecessary keeps
+    /// Bluetooth output devices (e.g. AirPods Pro) in the high-quality A2DP mode.
+    /// </summary>
+    private static bool IsCoreAudioDeviceBluetooth(string uid)
+    {
+        var devicesAddr = new AudioObjectPropertyAddress
+        {
+            mSelector = kAudioHardwarePropertyDevices,
+            mScope    = kAudioObjectPropertyScopeGlobal,
+            mElement  = kAudioObjectPropertyElementMain,
+        };
+
+        if (AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, in devicesAddr, 0, IntPtr.Zero, out uint dataSize) != 0)
+            return false;
+
+        int deviceCount = (int)(dataSize / sizeof(uint));
+        if (deviceCount == 0)
+            return false;
+
+        var deviceIds = new uint[deviceCount];
+        var gch = GCHandle.Alloc(deviceIds, GCHandleType.Pinned);
+        try
+        {
+            if (AudioObjectGetPropertyData(kAudioObjectSystemObject, in devicesAddr, 0, IntPtr.Zero, ref dataSize, gch.AddrOfPinnedObject()) != 0)
+                return false;
+        }
+        finally
+        {
+            gch.Free();
+        }
+
+        foreach (uint deviceId in deviceIds)
+        {
+            var deviceUid = GetCoreAudioStringProperty(deviceId, kAudioDevicePropertyDeviceUID, kAudioObjectPropertyScopeGlobal);
+            if (deviceUid != uid)
+                continue;
+
+            var transportAddr = new AudioObjectPropertyAddress
+            {
+                mSelector = kAudioDevicePropertyTransportType,
+                mScope    = kAudioObjectPropertyScopeGlobal,
+                mElement  = kAudioObjectPropertyElementMain,
+            };
+
+            var transportBuf = new uint[1];
+            uint transportSize = sizeof(uint);
+            var gch2 = GCHandle.Alloc(transportBuf, GCHandleType.Pinned);
+            try
+            {
+                if (AudioObjectGetPropertyData(deviceId, in transportAddr, 0, IntPtr.Zero, ref transportSize, gch2.AddrOfPinnedObject()) == 0)
+                {
+                    uint transportType = transportBuf[0];
+                    return transportType == kAudioDeviceTransportTypeBluetooth
+                        || transportType == kAudioDeviceTransportTypeBluetoothLE;
+                }
+            }
+            finally
+            {
+                gch2.Free();
+            }
+
+            return false;
+        }
+
+        return false;
     }
 
     /// <summary>
