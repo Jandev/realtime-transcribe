@@ -104,6 +104,44 @@
                 Text="Settings are stored securely on this device."
                 TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray500}}" />
 
+            <!-- ── System Prompt ──────────────────────────────────────── -->
+            <Label
+                Style="{StaticResource SectionHeader}"
+                Text="CONTEXT &amp; VOCABULARY"
+                Margin="4,0,0,6" />
+
+            <Border Margin="0,0,0,8">
+                <VerticalStackLayout>
+                    <Grid
+                        ColumnDefinitions="*"
+                        Padding="16,12">
+                        <VerticalStackLayout Spacing="4">
+                            <Label
+                                FontSize="13"
+                                Text="System Prompt File"
+                                TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray500}}" />
+                            <HorizontalStackLayout Spacing="8">
+                                <Entry
+                                    HorizontalOptions="FillAndExpand"
+                                    IsReadOnly="True"
+                                    Placeholder="No file selected"
+                                    FontSize="15"
+                                    Text="{Binding SystemPromptFilePath}" />
+                                <Button
+                                    Command="{Binding BrowseSystemPromptFileCommand}"
+                                    Text="Browse…" />
+                            </HorizontalStackLayout>
+                        </VerticalStackLayout>
+                    </Grid>
+                </VerticalStackLayout>
+            </Border>
+
+            <Label
+                FontSize="13"
+                Margin="4,0,0,24"
+                Text="Point to a Markdown file that describes your domain vocabulary and meeting context. The file is re-read on every transcription, so edits are picked up without restarting."
+                TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray500}}" />
+
             <Label
                 FontAttributes="Bold"
                 FontSize="20"

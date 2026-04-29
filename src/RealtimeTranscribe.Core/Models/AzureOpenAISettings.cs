@@ -23,6 +23,17 @@ public class AzureOpenAISettings
     public string ChatDeploymentName { get; set; } = "gpt-4o-mini";
 
     /// <summary>
+    /// Optional path to a Markdown file whose content is used as domain context.
+    /// The file content is forwarded to the Whisper transcription model as a prompt hint
+    /// and is prepended to the diarization and summarisation system prompts.
+    /// Use the file to describe the domain vocabulary, meeting type, or any other context
+    /// that helps the model produce more accurate transcriptions and summaries.
+    /// The file is re-read on every transcription call, so edits are picked up immediately
+    /// without restarting the app or saving settings.
+    /// </summary>
+    public string SystemPromptFilePath { get; set; } = string.Empty;
+
+    /// <summary>
     /// Returns <see langword="true"/> when the configured endpoint points to an Azure AI Foundry
     /// project (<c>services.ai.azure.com</c>), rather than a classic Azure OpenAI resource or
     /// an Azure AI Services (Cognitive Services) resource.

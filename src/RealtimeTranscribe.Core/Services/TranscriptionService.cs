@@ -82,7 +82,13 @@ public class TranscriptionService : ITranscriptionService
         var audioClient = client.GetAudioClient(_settings.WhisperDeploymentName);
 
         using var audioStream = new MemoryStream(wavBytes);
-        var result = await audioClient.TranscribeAudioAsync(audioStream, "audio.wav", cancellationToken: cancellationToken);
+
+        AudioTranscriptionOptions? options = null;
+        var prompt = await ReadSystemPromptFileAsync(cancellationToken);
+        if (!string.IsNullOrWhiteSpace(prompt))
+            options = new AudioTranscriptionOptions { Prompt = prompt };
+
+        var result = await audioClient.TranscribeAudioAsync(audioStream, "audio.wav", options, cancellationToken: cancellationToken);
 
         // Belt-and-braces hallucination filter.  Even with the silence pre-check above, a
         // chunk that contains only a few hundred milliseconds of real audio (e.g. a UI
@@ -103,7 +109,7 @@ public class TranscriptionService : ITranscriptionService
 
         var messages = new List<ChatMessage>
         {
-            new SystemChatMessage(DiarizationSystemPrompt),
+            new SystemChatMessage(await BuildSystemPromptAsync(DiarizationSystemPrompt, cancellationToken)),
             new UserChatMessage($"Transcript:\n\n{transcript}")
         };
 
@@ -122,7 +128,7 @@ public class TranscriptionService : ITranscriptionService
 
         var messages = new List<ChatMessage>
         {
-            new SystemChatMessage(SummarisationSystemPrompt),
+            new SystemChatMessage(await BuildSystemPromptAsync(SummarisationSystemPrompt, cancellationToken)),
             new UserChatMessage($"Transcript:\n\n{transcript}")
         };
 
@@ -141,7 +147,7 @@ public class TranscriptionService : ITranscriptionService
 
         var messages = new List<ChatMessage>
         {
-            new SystemChatMessage(SummarisationSystemPrompt),
+            new SystemChatMessage(await BuildSystemPromptAsync(SummarisationSystemPrompt, cancellationToken)),
             new UserChatMessage($"Transcript:\n\n{transcript}")
         };
 
@@ -192,5 +198,39 @@ public class TranscriptionService : ITranscriptionService
         }
 
         return new AzureOpenAIClient(endpoint, credential);
+    }
+
+    /// <summary>
+    /// Reads the system prompt from <see cref="AzureOpenAISettings.SystemPromptFilePath"/> and
+    /// prepends it to <paramref name="basePrompt"/>. Returns <paramref name="basePrompt"/>
+    /// unchanged when no file path is configured or the file cannot be read.
+    /// </summary>
+    private async Task<string> BuildSystemPromptAsync(string basePrompt, CancellationToken cancellationToken)
+    {
+        var userContext = await ReadSystemPromptFileAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(userContext))
+            return basePrompt;
+
+        return basePrompt + "\n\n" + userContext.Trim();
+    }
+
+    /// <summary>
+    /// Reads the content of <see cref="AzureOpenAISettings.SystemPromptFilePath"/>.
+    /// Returns an empty string when no path is configured or the file cannot be read.
+    /// </summary>
+    private async Task<string> ReadSystemPromptFileAsync(CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_settings.SystemPromptFilePath))
+            return string.Empty;
+
+        try
+        {
+            return await File.ReadAllTextAsync(_settings.SystemPromptFilePath, cancellationToken);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // File is missing, locked, or inaccessible — proceed without context.
+            return string.Empty;
+        }
     }
 }
